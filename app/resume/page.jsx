@@ -1,19 +1,5 @@
 "use client";
 
-import {
-  FaHtml5,
-  FaCss3,
-  FaJs,
-  FaReact,
-  FaNodeJs,
-  FaJava,
-  FaDocker,
-  FaAws,
-  FaAndroid,
-  FaPython,
-} from "react-icons/fa";
-
-import { SiTailwindcss, SiNextdotjs, SiSpringboot } from "react-icons/si";
 
 //components
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,112 +12,8 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { motion } from "framer-motion";
 
+import { education,skills,experience,about} from "@/lib/info";
 
-const about = {
-  title: "About me",
-  description: "lorem ipsum",
-  info: [
-    {
-      fieldName: "Name",
-      fieldValue: "Jai Shankar",
-    },
-    {
-      fieldName: "Email",
-      fieldValue: "jaimauryatech@gmail.com",
-    },
-    {
-      fieldName: "Freelance",
-      fieldValue: "Available",
-    },
-    {
-      fieldName: "Languages",
-      fieldValue: "English, Hindi",
-    },
-    {
-      fieldName: "Experience",
-      fieldValue: "1+ years",
-    },
-  ],
-};
-
-const experience = {
-  icon: "/assets/resume/badge.svg",
-  title: "My experience",
-  description: "lorem ipsum",
-  items: [
-    {
-      company: "Swachh.io",
-      position: "SDE Intern",
-      location: "New Delhi , India",
-      duration: "May,2023 - July,2023",
-    },
-    {
-      company: "2Sigma School",
-      position: "SDE Intern",
-      location: "Santa Clara , CA , US (Remote)",
-      duration: "Mar,2024 - May,2024",
-    },
-    {
-      company: "Hyperbots Inc.",
-      position: "SDE-I Fulltime",
-      location: "Bengaluru,India",
-      duration: "June,2024 - present",
-    },
-  ],
-};
-
-const education = {
-  icon: "/assets/resume/cap.svg",
-  title: "My Education",
-  description: "lorem ipsum",
-  items: [
-    {
-      university: "IIT Delhi",
-      degree: "B.Tech",
-      major: "Engineering and Computational Mechanics",
-      duration: "Nov,2020 - May,2024",
-    },
-  ],
-};
-
-const skills = {
-  title: "My skills",
-  description: "lorem ipsum",
-  skillList: [
-    {
-      icon: <FaReact />,
-      name: "React.js",
-    },
-    {
-      icon: <FaJava />,
-      name: "Java",
-    },
-    {
-      icon: <SiNextdotjs />,
-      name: "Next.js",
-    },
-    {
-      icon: <SiSpringboot />,
-      name: "SpringBoot",
-    },
-    {
-      icon: <FaJs />,
-      name: "JavaScript",
-    },
-    {
-      icon: <FaNodeJs />,
-      name: "Node.js",
-    },
-    {
-      icon: <FaAws />,
-      name: "AWS",
-    },
-    {
-      icon: <FaDocker />,
-      name: "Docker",
-    },
-  ],
-};
 
 function Resume() {
   return (

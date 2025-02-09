@@ -14,39 +14,7 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import WorkSliderBtns from "@/components/WorkSliderBtns";
-
-const projects = [
-  {
-    num: "01",
-    category: "FullStack",
-    title: "Project 1",
-    description: "Lorem ipsum",
-    stack: ["Next.js", "Spring Boot"],
-    image: "/assets/work/thumb1.png",
-    live: "#",
-    github: "#",
-  },
-  {
-    num: "02",
-    category: "FullStack",
-    title: "Project 2",
-    description: "Lorem ipsum",
-    stack: ["Python", "Chrome Extension"],
-    image: "/assets/work/thumb2.png",
-    live: "#",
-    github: "#",
-  },
-  {
-    num: "03",
-    category: "FullStack",
-    title: "Project 3",
-    description: "Lorem ipsum",
-    stack: ["Java", "Database"],
-    image: "/assets/work/thumb3.png",
-    live: "#",
-    github: "#",
-  },
-];
+import { projects } from "@/lib/info";
 
 function Work() {
   const [project, setProject] = useState(projects[0]);

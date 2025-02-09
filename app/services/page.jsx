@@ -3,33 +3,7 @@
 import { BsArrowDownRight } from "react-icons/bs";
 import Link from "next/link";
 import { motion } from "framer-motion";
-
-const services = [
-  {
-    num: "01",
-    title: "Web Development",
-    description: "lorem ipsum de valua de colva de vagator",
-    href: "",
-  },
-  {
-    num: "02",
-    title: "Coding Lessons",
-    description: "lorem ipsum de valua de colva de vagator",
-    href: "",
-  },
-  {
-    num: "03",
-    title: "Photography",
-    description: "lorem ipsum de valua de colva de vagator",
-    href: "",
-  },
-  {
-    num: "04",
-    title: "App Development",
-    description: "lorem ipsum de valua de colva de vagator",
-    href: "",
-  },
-];
+import { services} from "@/lib/info";
 
 function Services() {
   return (
