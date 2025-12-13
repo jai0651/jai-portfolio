@@ -33,9 +33,21 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# database
+*.db
+*.db-journal
+
+# seed file (contains default credentials)
+app/api/admin/seed/
+
 # vercel
 .vercel
+
+# uploads
+/public/uploads
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/lib/generated/prisma
