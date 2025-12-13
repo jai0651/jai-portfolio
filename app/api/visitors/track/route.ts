@@ -45,6 +45,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Only track home page visits
+    const path = body.path || "/";
+    if (path !== "/") {
+      return NextResponse.json({ success: false, message: "Only home page visits are tracked" }, { status: 400 });
+    }
+
     const visitor = await prisma.visitor.create({
       data: {
         ip,
@@ -52,7 +58,7 @@ export async function POST(req: NextRequest) {
         city: geoData.city,
         region: geoData.region,
         userAgent,
-        path: body.path || "/",
+        path: "/",
         referer,
       },
     });
