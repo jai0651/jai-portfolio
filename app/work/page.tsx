@@ -99,11 +99,11 @@ const Work = () => {
                   <Image
                     src={project.image || "/assets/work/thumb1.png"}
                     fill
-                    className="object-cover object-top opacity-60 grayscale transition-all duration-500 group-hover:scale-[1.04] group-hover:opacity-100 group-hover:grayscale-0"
+                    className="thumb-duotone object-cover object-top transition-all duration-500"
                     alt={project.title}
                   />
-                  {/* green wash + readability gradient */}
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent transition-opacity duration-500 group-hover:opacity-0" />
+                  {/* green wash + readability gradient (hover-capable only) */}
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent opacity-0 transition-opacity duration-500 [@media(hover:hover)]:opacity-100 [@media(hover:hover)]:group-hover:opacity-0" />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface via-surface/25 to-transparent" />
 
                   {/* filename tag */}

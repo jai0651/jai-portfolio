@@ -214,4 +214,23 @@
   .link-term {
     @apply text-accent underline decoration-accent/30 underline-offset-4 transition-colors hover:decoration-accent;
   }
+
+  /* ── Project thumbnail: full colour on touch, duotone→colour on
+        hover-capable devices only (touch has no hover, so it must
+        not get stuck greyed-out). ─────────────────────────────── */
+  .thumb-duotone {
+    filter: grayscale(0);
+    opacity: 1;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .thumb-duotone {
+      filter: grayscale(1);
+      opacity: 0.6;
+    }
+    .group:hover .thumb-duotone {
+      filter: grayscale(0);
+      opacity: 1;
+      transform: scale(1.04);
+    }
+  }
 }
