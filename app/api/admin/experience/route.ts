@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { cachedJson } from "@/lib/apiCache";
 
 export async function GET() {
   try {
     const experiences = await prisma.experience.findMany({
       orderBy: { order: "asc" },
     });
-    return NextResponse.json({ experiences });
+    return cachedJson({ experiences });
   } catch {
     return NextResponse.json(
       { message: "Failed to fetch experiences" },

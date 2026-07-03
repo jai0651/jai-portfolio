@@ -1,21 +1,25 @@
-import { JetBrains_Mono } from "next/font/google";
+import { JetBrains_Mono, Inter } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import PageTransition from "@/components/PageTransition";
 import { Providers } from "@/components/Providers";
 import { VisitorTracker } from "@/components/VisitorTracker";
+import SiteShell from "@/components/SiteShell";
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800"],
+  weight: ["300", "400", "500", "600", "700"],
   variable: "--font-jetbrainsMono",
 });
 
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+  variable: "--font-inter",
+});
+
 export const metadata = {
-  title: "Jai Shankar | Portfolio",
+  title: "Jai Shankar — AI / LLM Engineer",
   description:
-    "Full-Stack Developer specializing in React, Spring Boot, and AI Solutions",
+    "AI/LLM engineer and software engineer working at the intersection of software, machine learning, maths and physics. LLM agents in production, ML systems, and differentiable-physics research (IIT Delhi).",
 };
 
 export default function RootLayout({
@@ -24,16 +28,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={jetbrainsMono.variable}>
+    <html lang="en" className="dark">
+      <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
         <Providers>
           <VisitorTracker />
-          <Header />
-          <PageTransition>{children}</PageTransition>
-          <Footer />
+          <SiteShell>{children}</SiteShell>
         </Providers>
       </body>
     </html>
   );
 }
-

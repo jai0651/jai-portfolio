@@ -118,7 +118,7 @@ export default function MessagesPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-[#27272c] rounded-xl overflow-hidden border border-white/5">
+        <div className="bg-[#0f1422] rounded-xl overflow-hidden border border-white/5">
           <div className="max-h-[600px] overflow-y-auto">
             {messages.length === 0 ? (
               <p className="p-6 text-white/60">No messages yet</p>
@@ -130,8 +130,8 @@ export default function MessagesPage() {
                     setSelectedMessage(message);
                     if (!message.isRead) markAsRead(message.id, true);
                   }}
-                  className={`p-4 border-b border-white/5 cursor-pointer hover:bg-[#323238] transition-colors ${
-                    selectedMessage?.id === message.id ? "bg-[#323238]" : ""
+                  className={`p-4 border-b border-white/5 cursor-pointer hover:bg-[#161d2e] transition-colors ${
+                    selectedMessage?.id === message.id ? "bg-[#161d2e]" : ""
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -188,7 +188,7 @@ export default function MessagesPage() {
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="bg-[#27272c] rounded-xl p-6 border border-white/5"
+            className="bg-[#0f1422] rounded-xl p-6 border border-white/5"
           >
             <div className="flex justify-between items-start mb-6">
               <div>
@@ -209,7 +209,7 @@ export default function MessagesPage() {
                 <FaTrash />
               </Button>
             </div>
-            <div className="bg-[#1e1e21] rounded-lg p-4">
+            <div className="bg-[#0b0f19] rounded-lg p-4">
               <p className="text-white/80 whitespace-pre-wrap">
                 {selectedMessage.message}
               </p>

@@ -124,7 +124,7 @@ export default function ResumePage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+        <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
           <h2 className="text-xl font-bold text-white mb-4">Upload New Resume</h2>
           <p className="text-white/60 mb-4">
             Upload a new PDF resume. This will replace the current active resume used on the homepage download button.
@@ -153,7 +153,7 @@ export default function ResumePage() {
           </label>
 
           {activeResume && (
-            <div className="mt-6 p-4 bg-[#1e1e21] rounded-lg">
+            <div className="mt-6 p-4 bg-[#0b0f19] rounded-lg">
               <h3 className="text-white font-medium mb-2">Current Active Resume</h3>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -184,7 +184,7 @@ export default function ResumePage() {
           )}
         </div>
 
-        <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+        <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
           <h2 className="text-xl font-bold text-white mb-4">Resume History</h2>
           <div className="space-y-3 max-h-[400px] overflow-y-auto">
             {resumes.length > 0 ? (
@@ -192,7 +192,7 @@ export default function ResumePage() {
                 <div
                   key={resume.id}
                   className={`flex items-center justify-between p-3 rounded-lg ${
-                    resume.isActive ? "bg-accent/10 border border-accent/20" : "bg-[#1e1e21]"
+                    resume.isActive ? "bg-accent/10 border border-accent/20" : "bg-[#0b0f19]"
                   }`}
                 >
                   <div className="flex items-center gap-3">

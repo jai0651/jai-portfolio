@@ -32,41 +32,34 @@ const Stats = () => {
   }, []);
 
   const stats = [
-    { num: parseInt(statsData.stats_years || "1"), text: "Years of experience" },
-    { num: parseInt(statsData.stats_projects || "10"), text: "Projects completed" },
-    { num: parseInt(statsData.stats_technologies || "8"), text: "Technologies mastered" },
-    { num: parseInt(statsData.stats_commits || "200"), text: "Code commits" },
+    { key: "years", num: parseInt(statsData.stats_years || "2"), text: "years shipping" },
+    { key: "projects", num: parseInt(statsData.stats_projects || "10"), text: "projects built" },
+    { key: "technologies", num: parseInt(statsData.stats_technologies || "12"), text: "tools in the kit" },
+    { key: "commits", num: parseInt(statsData.stats_commits || "200"), text: "commits pushed" },
   ];
 
-  if (loading) {
-    return null;
-  }
+  if (loading) return null;
 
   return (
-    <section className="pt-4 pb-12 xl:pt-0 xl:pb-0">
-      <div className="container mx-auto">
-        <div className="flex flex-wrap gap-6 max-w-[80vw] mx-auto xl:max-w-none">
-          {stats.map((item, index) => (
-            <div
-              key={index}
-              className="flex-1 flex gap-4 items-center justify-center xl:justify-start"
-            >
-              <CountUp
-                end={item.num}
-                duration={5}
-                delay={2}
-                className="text-4xl xl:text-6xl font-extrabold text-accent"
-              />
-              <p
-                className={`${
-                  item.text.length < 15 ? "max-w-[100px]" : "max-w-[150px]"
-                } leading-snug text-white/80`}
-              >
-                {item.text}
-              </p>
+    <section className="container mx-auto px-4 pb-20">
+      <p className="mb-4 font-mono text-xs text-faint">
+        <span className="text-accent-dim">$</span> stat --summary
+      </p>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line xl:grid-cols-4">
+        {stats.map((item) => (
+          <div
+            key={item.key}
+            className="group bg-surface p-6 transition-colors duration-300 hover:bg-surface-2"
+          >
+            <div className="flex items-baseline gap-1 font-mono">
+              <span className="accent-text text-4xl font-semibold xl:text-5xl">
+                <CountUp end={item.num} duration={2.2} delay={0.3} />
+              </span>
+              <span className="accent-text text-2xl">+</span>
             </div>
-          ))}
-        </div>
+            <p className="mt-2 font-mono text-sm text-muted">{item.text}</p>
+          </div>
+        ))}
       </div>
     </section>
   );

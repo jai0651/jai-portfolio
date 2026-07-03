@@ -162,7 +162,7 @@ export default function MediaPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+        <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
           <h2 className="text-xl font-bold text-white mb-4">Upload Files</h2>
           <p className="text-white/60 mb-4 text-sm">
             Upload images or PDFs. Files are stored in Vercel Blob storage.
@@ -178,7 +178,7 @@ export default function MediaPage() {
                   className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
                     selectedCategory === cat.value
                       ? "bg-accent text-primary"
-                      : "bg-[#1e1e21] text-white/60 hover:text-white"
+                      : "bg-[#0b0f19] text-white/60 hover:text-white"
                   }`}
                 >
                   {cat.label}
@@ -214,7 +214,7 @@ export default function MediaPage() {
           </label>
         </div>
 
-        <div className="lg:col-span-2 bg-[#27272c] rounded-xl p-6 border border-white/5">
+        <div className="lg:col-span-2 bg-[#0f1422] rounded-xl p-6 border border-white/5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-white">All Media</h2>
             <div className="flex items-center gap-2">
@@ -222,7 +222,7 @@ export default function MediaPage() {
               <select
                 value={filterCategory}
                 onChange={(e) => setFilterCategory(e.target.value)}
-                className="bg-[#1e1e21] text-white/80 rounded-lg px-3 py-1.5 text-sm border border-white/10"
+                className="bg-[#0b0f19] text-white/80 rounded-lg px-3 py-1.5 text-sm border border-white/10"
               >
                 <option value="all">All Categories</option>
                 {CATEGORIES.map((cat) => (
@@ -239,7 +239,7 @@ export default function MediaPage() {
               filteredMedia.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-[#1e1e21] rounded-lg overflow-hidden group relative"
+                  className="bg-[#0b0f19] rounded-lg overflow-hidden group relative"
                 >
                   <div className="aspect-square relative bg-[#18181b] flex items-center justify-center">
                     {item.type === "image" ? (

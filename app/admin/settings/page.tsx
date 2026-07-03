@@ -233,7 +233,7 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6">
-          <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+          <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
             <h2 className="text-xl font-bold text-white mb-6">Profile Photo</h2>
             <div className="flex items-start gap-6">
               <div className="relative">
@@ -290,7 +290,7 @@ export default function SettingsPage() {
                 </div>
 
                 {showMediaPicker && (
-                  <div className="bg-[#1e1e21] rounded-lg p-4 max-h-48 overflow-y-auto">
+                  <div className="bg-[#0b0f19] rounded-lg p-4 max-h-48 overflow-y-auto">
                     <p className="text-white/60 text-xs mb-2">Select from media library:</p>
                     <div className="grid grid-cols-4 gap-2">
                       {media.map((m) => (
@@ -328,7 +328,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+          <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
             <h2 className="text-xl font-bold text-white mb-6">Profile Info</h2>
             <form onSubmit={handleProfileSubmit} className="space-y-4">
               <div>
@@ -518,7 +518,7 @@ export default function SettingsPage() {
         </div>
 
         <div>
-          <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+          <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
             <h2 className="text-xl font-bold text-white mb-6">Change Password</h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">

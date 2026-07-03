@@ -2,19 +2,11 @@
 
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
-import { Swiper, SwiperSlide } from "swiper/react";
-import type { Swiper as SwiperType } from "swiper";
-import "swiper/css";
-import { BsArrowUpRight, BsGithub } from "react-icons/bs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { FiArrowUpRight, FiGithub } from "react-icons/fi";
 import Link from "next/link";
 import Image from "next/image";
-import WorkSliderBtns from "@/components/WorkSliderBtns";
+import { Skeleton } from "@/components/ui/skeleton";
+import GithubSection from "@/components/GithubSection";
 
 interface Project {
   id: string;
@@ -30,20 +22,13 @@ interface Project {
 
 const Work = () => {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchProjects = async () => {
       try {
         const res = await fetch("/api/admin/projects");
-        if (res.ok) {
-          const data = await res.json();
-          setProjects(data.projects);
-          if (data.projects.length > 0) {
-            setProject(data.projects[0]);
-          }
-        }
+        if (res.ok) setProjects((await res.json()).projects);
       } catch (e) {
         console.error("Failed to fetch projects:", e);
       } finally {
@@ -53,118 +38,133 @@ const Work = () => {
     fetchProjects();
   }, []);
 
-  const handleSlideChange = (swiper: SwiperType) => {
-    const currentIndex = swiper.activeIndex;
-    setProject(projects[currentIndex]);
-  };
-
   if (loading) {
     return (
-      <section className="min-h-[80vh] flex items-center justify-center">
-        <div className="text-accent text-xl">Loading...</div>
-      </section>
-    );
-  }
-
-  if (!project) {
-    return (
-      <section className="min-h-[80vh] flex items-center justify-center">
-        <div className="text-white/60 text-xl">No projects found</div>
-      </section>
-    );
-  }
-
-  const stackArray = project.stack ? project.stack.split(",") : [];
-
-  return (
-    <motion.section
-      initial={{ opacity: 0 }}
-      animate={{
-        opacity: 1,
-        transition: { delay: 0.4, duration: 0.4, ease: "easeIn" },
-      }}
-      className="min-h-[80vh] flex flex-col justify-center py-12 xl:px-0"
-    >
-      <div className="container mx-auto">
-        <div className="flex flex-col xl:flex-row xl:gap-[30px]">
-          <div className="w-full xl:w-[50%] xl:h-[460px] flex flex-col xl:justify-between order-2 xl:order-none">
-            <div className="flex flex-col gap-[30px] h-[50%]">
-              <div className="text-8xl leading-none font-extrabold text-transparent text-outline">
-                {project.num}
-              </div>
-              <h2 className="text-[42px] font-bold leading-none text-white group-hover:text-accent transition-all duration-500 capitalize">
-                {project.category} project
-              </h2>
-              <p className="text-white/60">{project.description}</p>
-              <ul className="flex gap-4">
-                {stackArray.map((item, index) => (
-                  <li key={index} className="text-xl text-accent">
-                    {item.trim()}
-                    {index !== stackArray.length - 1 && ","}
-                  </li>
-                ))}
-              </ul>
-              <div className="border border-white/20"></div>
-              <div className="flex items-center gap-4">
-                <Link href={project.live || "#"}>
-                  <TooltipProvider delayDuration={100}>
-                    <Tooltip>
-                      <TooltipTrigger className="w-[70px] h-[70px] rounded-full bg-white/5 flex justify-center items-center group">
-                        <BsArrowUpRight className="text-white text-3xl group-hover:text-accent" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Live project</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </Link>
-                <Link href={project.github || "#"}>
-                  <TooltipProvider delayDuration={100}>
-                    <Tooltip>
-                      <TooltipTrigger className="w-[70px] h-[70px] rounded-full bg-white/5 flex justify-center items-center group">
-                        <BsGithub className="text-white text-3xl group-hover:text-accent" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Github repository</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </Link>
+      <section className="container mx-auto px-4 py-14 xl:py-20">
+        <div className="mb-12 space-y-3">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-10 w-72" />
+        </div>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="overflow-hidden rounded-lg border border-line bg-surface/60">
+              <Skeleton className="aspect-[16/10] w-full rounded-none border-0" />
+              <div className="space-y-3 p-6">
+                <Skeleton className="h-5 w-1/2" />
+                <Skeleton className="h-4 w-full" />
               </div>
             </div>
-          </div>
-          <div className="w-full xl:w-[50%]">
-            <Swiper
-              spaceBetween={30}
-              slidesPerView={1}
-              className="xl:h-[520px] mb-12"
-              onSlideChange={handleSlideChange}
-            >
-              {projects.map((proj) => (
-                <SwiperSlide key={proj.id} className="w-full">
-                  <div className="h-[460px] relative group flex justify-center items-center bg-pink-50/20">
-                    <div className="absolute top-0 bottom-0 w-full h-full bg-black/10 z-10"></div>
-                    <div className="relative w-full h-full">
-                      <Image
-                        src={proj.image || "/assets/work/thumb1.png"}
-                        fill
-                        className="object-cover"
-                        alt={proj.title}
-                      />
-                    </div>
-                  </div>
-                </SwiperSlide>
-              ))}
-              <WorkSliderBtns
-                containerStyles="flex gap-2 absolute right-0 bottom-[calc(50%_-_22px)] xl:bottom-0 z-20 w-full justify-between xl:w-max xl:justify-none"
-                btnStyles="bg-accent hover:bg-accent-hover text-primary text-[22px] w-[44px] h-[44px] flex justify-center items-center transition-all"
-                iconsStyles=""
-              />
-            </Swiper>
-          </div>
+          ))}
         </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="container mx-auto px-4 py-14 xl:py-20">
+      <div className="mb-12">
+        <p className="mb-3 font-mono text-xs text-faint">
+          <span className="text-accent-dim">$</span> ls ~/work —{" "}
+          <span className="text-accent">{projects.length}</span> items
+        </p>
+        <h2 className="h2">
+          Things I&apos;ve <span className="gradient-text">built</span>
+        </h2>
+        <p className="mt-3 max-w-xl font-mono text-sm text-muted">
+          Products and experiments across full-stack engineering, applied AI,
+          and a bit of computational physics.
+        </p>
       </div>
-    </motion.section>
+
+      {projects.length === 0 ? (
+        <p className="font-mono text-sm text-muted">
+          <span className="text-accent-dim">#</span> no projects found.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {projects.map((project, index) => {
+            const stackArray = project.stack
+              ? project.stack.split(",").map((s) => s.trim()).filter(Boolean)
+              : [];
+            return (
+              <motion.article
+                key={project.id}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-60px" }}
+                transition={{ duration: 0.45, delay: (index % 3) * 0.06 }}
+                className="group flex flex-col overflow-hidden rounded-lg border border-line bg-surface/70 transition-all duration-200 hover:border-accent/40 hover:shadow-[0_16px_40px_-20px_rgba(126,231,135,0.35)]"
+              >
+                <div className="relative aspect-[16/10] overflow-hidden bg-surface-2">
+                  <Image
+                    src={project.image || "/assets/work/thumb1.png"}
+                    fill
+                    className="object-cover object-top opacity-60 grayscale transition-all duration-500 group-hover:scale-[1.04] group-hover:opacity-100 group-hover:grayscale-0"
+                    alt={project.title}
+                  />
+                  {/* green wash + readability gradient */}
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent transition-opacity duration-500 group-hover:opacity-0" />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface via-surface/25 to-transparent" />
+
+                  {/* filename tag */}
+                  <span className="absolute left-2.5 top-2.5 rounded border border-line bg-primary/70 px-2 py-0.5 font-mono text-[10px] text-accent-dim backdrop-blur-sm">
+                    {project.category?.toLowerCase().replace(/\s+/g, "-") || "project"}/
+                    {project.num}
+                  </span>
+
+                  {/* action links */}
+                  <span className="absolute right-2.5 top-2.5 flex gap-1.5">
+                    {project.live && (
+                      <Link
+                        href={project.live}
+                        target="_blank"
+                        className="flex h-7 w-7 items-center justify-center rounded border border-line bg-primary/70 text-faint backdrop-blur-sm transition-colors hover:border-accent/50 hover:text-accent"
+                        aria-label="Live project"
+                      >
+                        <FiArrowUpRight className="text-sm" />
+                      </Link>
+                    )}
+                    {project.github && (
+                      <Link
+                        href={project.github}
+                        target="_blank"
+                        className="flex h-7 w-7 items-center justify-center rounded border border-line bg-primary/70 text-faint backdrop-blur-sm transition-colors hover:border-accent/50 hover:text-accent"
+                        aria-label="GitHub repository"
+                      >
+                        <FiGithub className="text-sm" />
+                      </Link>
+                    )}
+                  </span>
+                </div>
+
+                <div className="flex flex-1 flex-col p-4">
+                  <h3 className="flex items-center gap-1.5 font-mono text-sm font-semibold text-ink transition-colors duration-200 group-hover:text-accent">
+                    <span className="text-accent-dim">▸</span>
+                    <span className="truncate">{project.title}</span>
+                  </h3>
+                  <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted line-clamp-2">
+                    {project.description}
+                  </p>
+                  {stackArray.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {stackArray.slice(0, 3).map((item, i) => (
+                        <span key={i} className="chip text-[10px] text-accent-dim">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </motion.article>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mt-20 border-t border-line pt-16">
+        <GithubSection />
+      </div>
+    </section>
   );
 };
 

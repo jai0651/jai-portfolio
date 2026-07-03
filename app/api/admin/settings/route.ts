@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { cachedJson } from "@/lib/apiCache";
 
 export async function GET() {
   try {
@@ -10,7 +11,7 @@ export async function GET() {
     settings.forEach((s) => {
       settingsMap[s.key] = s.value;
     });
-    return NextResponse.json({ settings: settingsMap });
+    return cachedJson({ settings: settingsMap });
   } catch {
     return NextResponse.json(
       { message: "Failed to fetch settings" },
@@ -45,5 +46,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
 
 

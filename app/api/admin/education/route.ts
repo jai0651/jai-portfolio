@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { cachedJson } from "@/lib/apiCache";
 
 export async function GET() {
   try {
     const education = await prisma.education.findMany({
       orderBy: { order: "asc" },
     });
-    return NextResponse.json({ education });
+    return cachedJson({ education });
   } catch {
     return NextResponse.json(
       { message: "Failed to fetch education" },

@@ -3,6 +3,7 @@ import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { cachedJson } from "@/lib/apiCache";
 
 export async function GET() {
   try {
@@ -10,7 +11,7 @@ export async function GET() {
       where: { isActive: true },
       orderBy: { createdAt: "desc" },
     });
-    return NextResponse.json({ resume });
+    return cachedJson({ resume });
   } catch {
     return NextResponse.json(
       { message: "Failed to fetch resume" },

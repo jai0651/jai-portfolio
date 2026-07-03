@@ -92,10 +92,10 @@ export default function VisitorsPage() {
         </div>
       </div>
 
-      <div className="bg-[#27272c] rounded-xl overflow-hidden border border-white/5">
+      <div className="bg-[#0f1422] rounded-xl overflow-hidden border border-white/5">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-[#1e1e21]">
+            <thead className="bg-[#0b0f19]">
               <tr>
                 <th className="text-left p-4 text-white/60 font-medium">Location</th>
                 <th className="text-left p-4 text-white/60 font-medium">IP Address</th>
@@ -108,7 +108,7 @@ export default function VisitorsPage() {
               {visitors.map((visitor) => (
                 <tr
                   key={visitor.id}
-                  className="border-t border-white/5 hover:bg-[#323238] transition-colors"
+                  className="border-t border-white/5 hover:bg-[#161d2e] transition-colors"
                 >
                   <td className="p-4">
                     <div className="flex items-center gap-2">

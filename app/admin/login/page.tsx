@@ -42,17 +42,25 @@ export default function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-primary px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <div className="grid-bg absolute inset-0 opacity-30" />
+        <div className="absolute -top-32 left-1/4 h-96 w-96 rounded-full bg-accent/20 blur-[120px]" />
+        <div className="absolute -bottom-32 right-1/4 h-96 w-96 rounded-full bg-accent-3/20 blur-[120px]" />
+      </div>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
         className="w-full max-w-md"
       >
-        <div className="bg-[#27272c] rounded-2xl p-8 shadow-2xl border border-white/10">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-accent mb-2">Admin Login</h1>
-            <p className="text-white/60">Sign in to manage your portfolio</p>
+        <div className="glass-strong rounded-3xl p-8 shadow-2xl">
+          <div className="mb-8 text-center">
+            <span className="text-3xl font-bold tracking-tight">
+              Jai<span className="gradient-text">.</span>
+              <span className="ml-1 font-mono text-sm text-white/40">admin</span>
+            </span>
+            <p className="mt-3 text-white/60">Sign in to manage your portfolio</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">

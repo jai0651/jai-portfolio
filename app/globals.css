@@ -1,50 +1,217 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #1c1c22;
-  --color-accent: #00ff99;
-  --color-accent-hover: #00e187;
+  /* ── Base surfaces — near-black terminal ink ─────────────────── */
+  --color-primary: #0a0c10;
+  --color-surface: #0e1218;
+  --color-surface-2: #141a22;
+  --color-surface-3: #1b232e;
+  --color-line: #222b36;
+  --color-line-2: #2e3a48;
+
+  /* ── Text ────────────────────────────────────────────────────── */
+  --color-ink: #c9d3de;
+  --color-muted: #7e8a99;
+  --color-faint: #55606d;
+
+  /* ── Accent system — single phosphor green + rare warm amber ── */
+  --color-accent: #7ee787;
+  --color-accent-hover: #a6f0ac;
+  --color-accent-dim: #3fb950;
+  --color-accent-2: #58d5c6; /* teal — used only in subtle green→teal blends */
+  --color-accent-3: #58d5c6;
+  --color-amber: #e3b341;
+
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrainsMono);
   --font-primary: var(--font-jetbrainsMono);
+
   --breakpoint-sm: 640px;
   --breakpoint-md: 768px;
   --breakpoint-lg: 960px;
   --breakpoint-xl: 1200px;
+
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-blink: blink 1.15s steps(1) infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-shimmer: shimmer 2.5s linear infinite;
+  --animate-marquee: marquee 40s linear infinite;
+  --animate-scan: scan 8s linear infinite;
 }
 
 @keyframes accordion-down {
   from { height: 0; }
   to { height: var(--radix-accordion-content-height); }
 }
-
 @keyframes accordion-up {
   from { height: var(--radix-accordion-content-height); }
   to { height: 0; }
 }
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
 
 @layer base {
-  body {
-    @apply font-primary bg-primary text-white leading-loose;
+  html {
+    scroll-behavior: smooth;
   }
 
+  body {
+    @apply font-mono bg-primary text-ink antialiased;
+    font-size: 15px;
+    line-height: 1.65;
+    background-image:
+      radial-gradient(55rem 40rem at 50% -10%, rgba(126, 231, 135, 0.05), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  /* Headings are mono, tight, restrained weight */
   .h1 {
-    @apply text-[48px] xl:text-[80px] leading-[1.1] font-semibold;
+    @apply font-mono text-[40px] xl:text-[68px] leading-[1.02] font-semibold tracking-tight;
   }
   .h2 {
-    @apply text-[36px] xl:text-[48px] leading-[1.1] font-semibold;
+    @apply font-mono text-[30px] xl:text-[42px] leading-[1.08] font-semibold tracking-tight;
   }
   .h3 {
-    @apply text-[20px] xl:text-[24px] leading-[1.1] font-semibold;
+    @apply font-mono text-[19px] xl:text-[22px] leading-[1.2] font-semibold tracking-tight;
+  }
+
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  ::selection {
+    background: rgba(126, 231, 135, 0.28);
+    color: #eafff0;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(63, 185, 80, 0.5) transparent;
+  }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(63, 185, 80, 0.5);
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  /* ── Text emphasis — subtle green→teal, no rainbow ──────────── */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(95deg, #7ee787 0%, #58d5c6 100%);
+  }
+
+  .accent-text {
+    color: var(--color-accent);
+  }
+
+  /* ── Monospace uppercase eyebrow label ─────────────────────── */
+  .mono-label {
+    @apply font-mono text-xs uppercase tracking-[0.28em] text-accent-dim;
+  }
+
+  /* ── Panels — bordered terminal surfaces (glass = legacy alias) */
+  .panel,
+  .glass {
+    background: rgba(14, 18, 24, 0.72);
+    border: 1px solid var(--color-line);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  .glass-strong {
+    background: rgba(10, 12, 16, 0.9);
+    border: 1px solid var(--color-line);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+
+  /* ── Accent-tinted border for feature cards ────────────────── */
+  .gradient-border {
+    position: relative;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+  }
+  .gradient-border:hover {
+    border-color: rgba(126, 231, 135, 0.4);
+  }
+
+  .glow {
+    box-shadow: 0 0 0 1px rgba(126, 231, 135, 0.12), 0 18px 50px -18px rgba(126, 231, 135, 0.3);
+  }
+  .glow-sm {
+    box-shadow: 0 8px 30px -14px rgba(126, 231, 135, 0.4);
+  }
+
+  /* ── Fine graph-paper grid ─────────────────────────────────── */
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 34px 34px;
   }
 
   .text-outline {
-    -webkit-text-stroke: 1px #ffffff;
+    -webkit-text-stroke: 1px rgba(255, 255, 255, 0.22);
+  }
+  .text-outline-hover {
+    -webkit-text-stroke: 1px var(--color-accent);
   }
 
-  .text-outline-hover {
-    -webkit-text-stroke: 1px #00ff99;
+  /* ── Mono tag / chip ───────────────────────────────────────── */
+  .chip {
+    @apply inline-flex items-center gap-2 rounded border border-line bg-surface-2/70 px-2.5 py-1 font-mono text-xs font-medium text-muted;
+  }
+
+  /* ── Terminal window frame ─────────────────────────────────── */
+  .term {
+    @apply overflow-hidden rounded-lg border border-line bg-surface/80;
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  .term-bar {
+    @apply flex items-center gap-2 border-b border-line bg-surface-2/80 px-4 py-2.5;
+  }
+  .term-dot {
+    @apply h-3 w-3 rounded-full;
+  }
+
+  /* ── Prompt sigil + blinking cursor ────────────────────────── */
+  .prompt::before {
+    content: "$ ";
+    color: var(--color-accent);
+  }
+  .cursor {
+    display: inline-block;
+    width: 0.6em;
+    height: 1.05em;
+    transform: translateY(0.15em);
+    background: var(--color-accent);
+    box-shadow: 0 0 8px rgba(126, 231, 135, 0.6);
+  }
+
+  /* ── Understated inline link ───────────────────────────────── */
+  .link-term {
+    @apply text-accent underline decoration-accent/30 underline-offset-4 transition-colors hover:decoration-accent;
   }
 }
-
-

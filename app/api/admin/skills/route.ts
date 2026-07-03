@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { cachedJson } from "@/lib/apiCache";
 
 export async function GET() {
   try {
@@ -9,7 +10,7 @@ export async function GET() {
       where: { isActive: true },
       orderBy: { order: "asc" },
     });
-    return NextResponse.json({ skills });
+    return cachedJson({ skills });
   } catch {
     return NextResponse.json(
       { message: "Failed to fetch skills" },
@@ -75,5 +76,6 @@ export async function DELETE(req: NextRequest) {
     );
   }
 }
+
 
 

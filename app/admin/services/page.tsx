@@ -129,7 +129,7 @@ export default function ServicesPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+        <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
           <h2 className="text-xl font-bold text-white mb-4">
             {editing ? "Edit" : "Add"} Service
           </h2>
@@ -182,13 +182,13 @@ export default function ServicesPage() {
           </form>
         </div>
 
-        <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+        <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
           <h2 className="text-xl font-bold text-white mb-4">Current Services</h2>
           <div className="space-y-3 max-h-[500px] overflow-y-auto">
             {services.map((service) => (
               <div
                 key={service.id}
-                className="flex items-center justify-between p-3 bg-[#1e1e21] rounded-lg"
+                className="flex items-center justify-between p-3 bg-[#0b0f19] rounded-lg"
               >
                 <div>
                   <span className="text-accent mr-2">{service.num}</span>

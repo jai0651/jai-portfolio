@@ -1,16 +1,21 @@
 "use client";
 
-import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetTitle,
+  SheetClose,
+} from "@/components/ui/sheet";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { CiMenuFries } from "react-icons/ci";
 
 const links = [
-  { name: "home", path: "/" },
-  { name: "services", path: "/services" },
-  { name: "resume", path: "/resume" },
-  { name: "work", path: "/work" },
-  { name: "contact", path: "/contact" },
+  { label: "~", path: "/" },
+  { label: "~/work", path: "/work" },
+  { label: "~/resume", path: "/resume" },
+  { label: "~/contact", path: "/contact" },
 ];
 
 const MobileNav = () => {
@@ -18,32 +23,33 @@ const MobileNav = () => {
 
   return (
     <Sheet>
-      <SheetTrigger className="flex justify-center items-center">
-        <CiMenuFries className="text-[32px] text-accent" />
+      <SheetTrigger className="flex items-center justify-center rounded-md border border-line bg-surface-2/60 p-2.5 text-muted transition-colors hover:border-accent/40 hover:text-accent">
+        <CiMenuFries className="text-2xl" />
       </SheetTrigger>
-      <SheetContent className="flex flex-col">
+      <SheetContent className="glass-strong flex flex-col border-l border-line">
         <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-        <div className="mt-24 mb-16 text-center text-2xl">
-          <Link href="/">
-            <h1 className="text-4xl font-semibold">
-              Jai<span className="text-accent">.</span>
-            </h1>
-          </Link>
+        <div className="mt-16 mb-10 font-mono text-sm text-muted">
+          <span className="text-accent">jai</span>
+          <span className="text-faint">@</span>
+          <span className="text-ink">shankar</span>
+          <span className="cursor ml-1 animate-blink align-middle" />
         </div>
-        <nav className="flex flex-col justify-center items-center gap-8">
-          {links.map((link, index) => (
-            <Link
-              key={index}
-              href={link.path}
-              className={`${
-                link.path === pathname
-                  ? "text-accent border-b-2 border-accent"
-                  : "text-white/80"
-              } text-xl capitalize hover:text-accent transition-all duration-300`}
-            >
-              {link.name}
-            </Link>
-          ))}
+        <nav className="flex flex-col gap-4 font-mono">
+          {links.map((link) => {
+            const active = link.path === pathname;
+            return (
+              <SheetClose asChild key={link.path}>
+                <Link
+                  href={link.path}
+                  className={`text-xl transition-colors duration-200 ${
+                    active ? "text-accent" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              </SheetClose>
+            );
+          })}
         </nav>
       </SheetContent>
     </Sheet>
@@ -51,4 +57,3 @@ const MobileNav = () => {
 };
 
 export default MobileNav;
-

@@ -224,7 +224,7 @@ export default function ProjectsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+        <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
           <h2 className="text-xl font-bold text-white mb-4">
             {editing ? "Edit" : "Add"} Project
           </h2>
@@ -302,7 +302,7 @@ export default function ProjectsPage() {
               </div>
 
               {formData.image && (
-                <div className="mt-2 relative w-32 h-20 rounded-lg overflow-hidden bg-[#1e1e21]">
+                <div className="mt-2 relative w-32 h-20 rounded-lg overflow-hidden bg-[#0b0f19]">
                   <img
                     src={formData.image}
                     alt="Preview"
@@ -319,7 +319,7 @@ export default function ProjectsPage() {
               )}
 
               {showMediaPicker && (
-                <div className="mt-2 bg-[#1e1e21] rounded-lg p-4 max-h-48 overflow-y-auto">
+                <div className="mt-2 bg-[#0b0f19] rounded-lg p-4 max-h-48 overflow-y-auto">
                   <p className="text-white/60 text-xs mb-2">Select from media library:</p>
                   <div className="grid grid-cols-4 gap-2">
                     {media.map((m) => (
@@ -379,13 +379,13 @@ export default function ProjectsPage() {
           </form>
         </div>
 
-        <div className="bg-[#27272c] rounded-xl p-6 border border-white/5">
+        <div className="bg-[#0f1422] rounded-xl p-6 border border-white/5">
           <h2 className="text-xl font-bold text-white mb-4">Current Projects</h2>
           <div className="space-y-3 max-h-[500px] overflow-y-auto">
             {projects.map((project) => (
               <div
                 key={project.id}
-                className="flex items-center justify-between p-3 bg-[#1e1e21] rounded-lg"
+                className="flex items-center justify-between p-3 bg-[#0b0f19] rounded-lg"
               >
                 <div className="flex items-center gap-3">
                   {project.image && (
