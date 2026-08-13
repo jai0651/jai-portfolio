@@ -1,26 +1,51 @@
 @import "tailwindcss";
 
+/*
+ * Terminal design system.
+ *
+ * Warm gold on blue-black ink. The identity is a shell: mono type for
+ * anything structural or technical (headings, nav, labels, chips, numerals,
+ * command output), Inter for prose — mono at paragraph length is fatiguing,
+ * and the split is what separates "themed" from "polished".
+ *
+ * The ground is deliberately navy-tinted rather than neutral black: a cool
+ * ground makes a warm accent read as light rather than as paint, which is
+ * why gold-on-navy feels lit and gold-on-grey feels flat.
+ *
+ * Three scales do the heavy lifting and nothing outside them is allowed:
+ *   radius      --radius-sm → --radius-2xl
+ *   elevation   --shadow-e1 → --shadow-e3, plus accent glow
+ *   motion      --ease-* + duration tokens
+ */
+
 @theme {
-  /* ── Base surfaces — near-black terminal ink ─────────────────── */
-  --color-primary: #0a0c10;
-  --color-surface: #0e1218;
-  --color-surface-2: #141a22;
-  --color-surface-3: #1b232e;
-  --color-line: #222b36;
-  --color-line-2: #2e3a48;
+  /* ── Base surfaces — blue-black terminal ink ─────────────────── */
+  --color-primary: #0b0f17;
+  --color-surface: #10151f;
+  --color-surface-2: #161d29;
+  --color-surface-3: #1d2534;
+  --color-deep: #070a11; /* below-primary tone for alternating bands */
+  --color-line: #212a39;
+  --color-line-2: #2e3a4d;
 
-  /* ── Text ────────────────────────────────────────────────────── */
-  --color-ink: #c9d3de;
-  --color-muted: #7e8a99;
-  --color-faint: #55606d;
+  /* ── Text — cool greys, all AA or better on --color-primary ──── */
+  --color-ink: #dde3ec; /* 15.1:1 */
+  --color-muted: #93a0b4; /* 7.24:1 — AA body */
+  --color-faint: #76818f; /* 4.85:1 — AA small text */
+  --color-ghost: #4d586a; /* decorative only — never carries text */
 
-  /* ── Accent system — single phosphor green + rare warm amber ── */
-  --color-accent: #7ee787;
-  --color-accent-hover: #a6f0ac;
-  --color-accent-dim: #3fb950;
-  --color-accent-2: #58d5c6; /* teal — used only in subtle green→teal blends */
-  --color-accent-3: #58d5c6;
-  --color-amber: #e3b341;
+  /* ── Accent — a single warm gold. 10.3:1 on primary ─────────── */
+  --color-accent: #f0b429;
+  --color-accent-hover: #f7c95c;
+  --color-accent-dim: #d99e2b; /* 8.1:1 — prompt sigils, eyebrow labels */
+  --color-accent-2: #f7d070; /* warm highlight for gold→light blends */
+  --color-accent-3: #f7d070;
+  /*
+   * Warning / "hot" semantic. Shifted to orange so it stays legible as a
+   * distinct signal now that gold is the accent — an amber warning next to
+   * an amber accent carries no information.
+   */
+  --color-amber: #f0883e;
 
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrainsMono);
@@ -31,6 +56,29 @@
   --breakpoint-lg: 960px;
   --breakpoint-xl: 1200px;
 
+  /* ── Radius scale — one rule, no ad-hoc values ───────────────── */
+  --radius-sm: 0.25rem; /* 4px  — chips, tags, tight badges */
+  --radius-md: 0.375rem; /* 6px  — inputs, small buttons */
+  --radius-lg: 0.625rem; /* 10px — buttons, cards (the default) */
+  --radius-xl: 1rem; /* 16px — panels, terminal frames */
+  --radius-2xl: 1.25rem; /* 20px — large feature surfaces */
+
+  /* ── Elevation — neutral depth, accent reserved for intent ───── */
+  --shadow-e1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
+  --shadow-e2: 0 2px 4px rgba(0, 0, 0, 0.3), 0 12px 28px -8px rgba(0, 0, 0, 0.55);
+  --shadow-e3: 0 4px 8px rgba(0, 0, 0, 0.35), 0 24px 56px -12px rgba(0, 0, 0, 0.65);
+  --shadow-glow: 0 0 0 1px rgba(240, 180, 41, 0.2),
+    0 14px 40px -16px rgba(240, 180, 41, 0.35);
+  --shadow-glow-lg: 0 0 0 1px rgba(240, 180, 41, 0.28),
+    0 0 40px -8px rgba(240, 180, 41, 0.3),
+    0 22px 60px -20px rgba(240, 180, 41, 0.45);
+  --shadow-inset-line: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+
+  /* ── Motion ──────────────────────────────────────────────────── */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
   --animate-blink: blink 1.15s steps(1) infinite;
@@ -38,6 +86,7 @@
   --animate-shimmer: shimmer 2.5s linear infinite;
   --animate-marquee: marquee 40s linear infinite;
   --animate-scan: scan 8s linear infinite;
+  --animate-pulse-ring: pulse-ring 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @keyframes accordion-down {
@@ -68,30 +117,59 @@
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
+/* Restrained breathing ring — exactly one primary CTA may use this. */
+@keyframes pulse-ring {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(240, 180, 41, 0.3),
+      0 8px 24px -10px rgba(240, 180, 41, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 9px rgba(240, 180, 41, 0),
+      0 10px 30px -8px rgba(240, 180, 41, 0.65);
+  }
+}
 
 @layer base {
   html {
     scroll-behavior: smooth;
   }
 
+  /*
+   * Inter is the default: prose inherits it. Mono is opt-in via font-mono,
+   * which every terminal-flavoured surface sets explicitly.
+   */
   body {
-    @apply font-mono bg-primary text-ink antialiased;
-    font-size: 15px;
-    line-height: 1.65;
-    background-image:
-      radial-gradient(55rem 40rem at 50% -10%, rgba(126, 231, 135, 0.05), transparent 60%);
+    @apply bg-primary font-sans text-ink antialiased;
+    font-size: 16px;
+    line-height: 1.7;
+    font-feature-settings: "cv11", "ss01";
+    font-variant-numeric: tabular-nums;
+    background-image: radial-gradient(
+      55rem 40rem at 50% -10%,
+      rgba(240, 180, 41, 0.05),
+      transparent 60%
+    );
     background-attachment: fixed;
   }
 
-  /* Headings are mono, tight, restrained weight */
+  /*
+   * Headings stay mono — that's the identity. Bold with negative tracking and
+   * sub-1 leading: mono is naturally wide, so display sizes need the letters
+   * pulled together and the lines packed, or the headline reads as a wall
+   * instead of a statement.
+   */
   .h1 {
-    @apply font-mono text-[40px] xl:text-[68px] leading-[1.02] font-semibold tracking-tight;
+    @apply font-mono text-[40px] leading-[0.98] font-bold tracking-[-0.035em] xl:text-[72px];
   }
   .h2 {
-    @apply font-mono text-[30px] xl:text-[42px] leading-[1.08] font-semibold tracking-tight;
+    @apply font-mono text-[30px] leading-[1.02] font-bold tracking-[-0.03em] xl:text-[46px];
   }
   .h3 {
-    @apply font-mono text-[19px] xl:text-[22px] leading-[1.2] font-semibold tracking-tight;
+    @apply font-mono text-[19px] leading-[1.25] font-semibold tracking-[-0.01em] xl:text-[22px];
+  }
+  /* Card-level heading — short enough that mono still reads well. */
+  .h4 {
+    @apply font-mono text-[15px] leading-[1.35] font-semibold tracking-[-0.01em] xl:text-base;
   }
 
   .font-mono {
@@ -99,27 +177,41 @@
   }
 
   ::selection {
-    background: rgba(126, 231, 135, 0.28);
-    color: #eafff0;
+    background: rgba(240, 180, 41, 0.28);
+    color: #fff8e7;
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(63, 185, 80, 0.5) transparent;
+    scrollbar-color: rgba(217, 158, 43, 0.5) transparent;
   }
   *::-webkit-scrollbar { width: 8px; height: 8px; }
   *::-webkit-scrollbar-thumb {
-    background: rgba(63, 185, 80, 0.5);
+    background: rgba(217, 158, 43, 0.5);
     border-radius: 9999px;
   }
   *::-webkit-scrollbar-track { background: transparent; }
+
+  /*
+   * Honour the OS setting. The infinite loops here (marquee, scan, blink,
+   * pulse-ring) are the ones that actually cause trouble; framer-motion is
+   * handled separately via MotionConfig reducedMotion="user".
+   */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
-  /* ── Text emphasis — subtle green→teal, no rainbow ──────────── */
+  /* ── Text emphasis — gold→light gold, no rainbow ──────────────*/
   .gradient-text {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(95deg, #7ee787 0%, #58d5c6 100%);
+    background-image: linear-gradient(95deg, #f0b429 0%, #f7d070 100%);
   }
 
   .accent-text {
@@ -129,6 +221,17 @@
   /* ── Monospace uppercase eyebrow label ─────────────────────── */
   .mono-label {
     @apply font-mono text-xs uppercase tracking-[0.28em] text-accent-dim;
+  }
+
+  /* Prose measure — long-form copy should never exceed ~68ch. */
+  .prose-measure {
+    max-width: 68ch;
+  }
+
+  /* Numerals that line up in stat grids and tables. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
   }
 
   /* ── Panels — bordered terminal surfaces (glass = legacy alias) */
@@ -153,22 +256,66 @@
     border: 1px solid var(--color-line);
   }
   .gradient-border:hover {
-    border-color: rgba(126, 231, 135, 0.4);
+    border-color: rgba(240, 180, 41, 0.4);
   }
 
   .glow {
-    box-shadow: 0 0 0 1px rgba(126, 231, 135, 0.12), 0 18px 50px -18px rgba(126, 231, 135, 0.3);
+    box-shadow: var(--shadow-glow);
   }
   .glow-sm {
-    box-shadow: 0 8px 30px -14px rgba(126, 231, 135, 0.4);
+    box-shadow: 0 8px 30px -14px rgba(240, 180, 41, 0.4);
   }
 
-  /* ── Fine graph-paper grid ─────────────────────────────────── */
+  /*
+   * The card contract. Every content surface on the site is .card, and
+   * interactive ones add .card-lift — so hover behaviour is defined once
+   * instead of re-improvised per page.
+   */
+  .card {
+    @apply rounded-lg border border-line bg-surface/70 shadow-e1;
+    transition-property: transform, border-color, background-color, box-shadow;
+    transition-duration: 240ms;
+    transition-timing-function: var(--ease-out-quint);
+  }
+  .card-lift:hover {
+    @apply border-accent/40 bg-surface-2/60 shadow-glow;
+    transform: translateY(-2px);
+  }
+  .card-flat {
+    @apply rounded-lg border border-line bg-surface;
+  }
+
+  /* ── Section bands — give the page visible chapters ─────────── */
+  .band-hero {
+    background-image:
+      radial-gradient(ellipse 90% 55% at 50% -5%, rgba(240, 180, 41, 0.1), transparent 60%),
+      radial-gradient(ellipse 55% 45% at 85% 12%, rgba(247, 208, 112, 0.05), transparent 70%);
+  }
+  .band-alt {
+    background-image: linear-gradient(180deg, #0c1016 0%, var(--color-deep) 100%);
+    border-top: 1px solid var(--color-line);
+    border-bottom: 1px solid var(--color-line);
+  }
+  .band-glow {
+    background-image:
+      radial-gradient(ellipse 70% 60% at 50% 50%, rgba(240, 180, 41, 0.07), transparent 65%),
+      linear-gradient(180deg, #0c1016 0%, var(--color-deep) 100%);
+    border-top: 1px solid var(--color-line);
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  /*
+   * Blueprint grid — cool blue rather than white, and two densities so it
+   * reads as a drawn plan instead of graph paper. Major lines every 4 cells
+   * give the eye something to measure against at a glance.
+   */
   .grid-bg {
     background-image:
-      linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-    background-size: 34px 34px;
+      linear-gradient(to right, rgba(104, 146, 210, 0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(104, 146, 210, 0.08) 1px, transparent 1px),
+      linear-gradient(to right, rgba(104, 146, 210, 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(104, 146, 210, 0.035) 1px, transparent 1px);
+    background-size: 256px 256px, 256px 256px, 64px 64px, 64px 64px;
   }
 
   .text-outline {
@@ -180,20 +327,18 @@
 
   /* ── Mono tag / chip ───────────────────────────────────────── */
   .chip {
-    @apply inline-flex items-center gap-2 rounded border border-line bg-surface-2/70 px-2.5 py-1 font-mono text-xs font-medium text-muted;
+    @apply inline-flex items-center gap-2 rounded-sm border border-line bg-surface-2/70 px-2.5 py-1 font-mono text-xs font-medium text-muted;
   }
 
   /* ── Terminal window frame ─────────────────────────────────── */
   .term {
-    @apply overflow-hidden rounded-lg border border-line bg-surface/80;
+    @apply overflow-hidden rounded-xl border border-line bg-surface/80 shadow-e2;
     -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
   }
   .term-bar {
     @apply flex items-center gap-2 border-b border-line bg-surface-2/80 px-4 py-2.5;
-  }
-  .term-dot {
-    @apply h-3 w-3 rounded-full;
+    box-shadow: var(--shadow-inset-line);
   }
 
   /* ── Prompt sigil + blinking cursor ────────────────────────── */
@@ -207,12 +352,184 @@
     height: 1.05em;
     transform: translateY(0.15em);
     background: var(--color-accent);
-    box-shadow: 0 0 8px rgba(126, 231, 135, 0.6);
+    box-shadow: 0 0 8px rgba(240, 180, 41, 0.6);
   }
 
   /* ── Understated inline link ───────────────────────────────── */
   .link-term {
     @apply text-accent underline decoration-accent/30 underline-offset-4 transition-colors hover:decoration-accent;
+  }
+
+  /*
+   * ── Technical article scope ──────────────────────────────────
+   *
+   * Re-implements the class vocabulary the generated HTML docs already use,
+   * in this site's tokens. That vocabulary is the shipping contract: an
+   * artifact authored against it drops into content/writing/ and comes out
+   * looking native, with no per-post styling.
+   *
+   *   structure   h2 (+ .num), h3, p, ul/ol, strong, a, code, pre
+   *   blocks      .card, .grid2, .callout (.warn/.prod) > .label
+   *   tables      table, .tablewrap
+   *   diagrams    .diagram + .a .b .c .w .g .m colour spans
+   *   data        .pill, .kpi > .box > .v/.k
+   */
+  .tech-article {
+    @apply text-[17px] leading-[1.75] text-muted;
+  }
+
+  .tech-article h2 {
+    @apply mb-3 mt-12 border-b border-line pb-2.5 font-mono text-[24px] font-bold tracking-[-0.02em] text-ink xl:text-[28px];
+  }
+  .tech-article h2 .num {
+    @apply mr-2.5 font-mono text-[18px] font-semibold text-accent;
+  }
+  .tech-article h3 {
+    @apply mb-2 mt-8 font-mono text-[18px] font-semibold tracking-[-0.01em] text-ink;
+  }
+  .tech-article h4 {
+    @apply mb-1.5 mt-6 font-mono text-[15px] font-semibold text-ink;
+  }
+
+  .tech-article p {
+    @apply my-3.5;
+  }
+  .tech-article ul,
+  .tech-article ol {
+    @apply my-3.5 pl-6;
+  }
+  .tech-article ul {
+    @apply list-disc;
+  }
+  .tech-article ol {
+    @apply list-decimal;
+  }
+  .tech-article li {
+    @apply my-1.5;
+  }
+  .tech-article li::marker {
+    color: var(--color-accent-dim);
+  }
+  .tech-article strong {
+    @apply font-semibold text-ink;
+  }
+  .tech-article em {
+    @apply italic text-ink/85;
+  }
+  .tech-article a {
+    @apply text-accent underline decoration-accent/30 underline-offset-4 transition-colors hover:decoration-accent;
+  }
+  .tech-article hr {
+    @apply my-10 border-line;
+  }
+  .tech-article blockquote {
+    @apply my-5 border-l-2 border-accent/50 pl-5 text-ink/85 italic;
+  }
+  .tech-article img {
+    @apply my-6 rounded-lg border border-line;
+  }
+
+  .tech-article code {
+    @apply rounded-sm border border-line bg-surface px-1.5 py-0.5 font-mono text-[0.86em] text-accent-2;
+  }
+  .tech-article pre {
+    @apply my-5 overflow-x-auto rounded-lg border border-line bg-surface p-4 font-mono text-[13.5px] leading-[1.6] text-ink/90 shadow-e1;
+  }
+  .tech-article pre code {
+    @apply border-0 bg-transparent p-0 text-inherit;
+  }
+
+  .tech-article .card {
+    @apply my-4 rounded-lg border border-line bg-surface/70 px-5 py-4 shadow-e1;
+  }
+  .tech-article .card h3 {
+    @apply mt-0;
+  }
+  .tech-article .grid2 {
+    @apply my-4 grid grid-cols-1 gap-3.5 md:grid-cols-2;
+  }
+
+  .tech-article .callout {
+    @apply my-5 rounded-r-lg border-l-[3px] border-accent bg-surface/80 px-5 py-3.5;
+  }
+  .tech-article .callout.warn {
+    border-left-color: var(--color-amber);
+  }
+  .tech-article .callout.prod {
+    border-left-color: var(--color-accent-2);
+  }
+  .tech-article .callout .label {
+    @apply mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-accent;
+  }
+  .tech-article .callout.warn .label {
+    color: var(--color-amber);
+  }
+  .tech-article .callout.prod .label {
+    color: var(--color-accent-2);
+  }
+
+  .tech-article .tablewrap {
+    @apply my-5 overflow-x-auto rounded-lg border border-line;
+  }
+  .tech-article table {
+    @apply w-full border-collapse text-[14.5px];
+  }
+  .tech-article th,
+  .tech-article td {
+    @apply border-b border-line px-3 py-2.5 text-left align-top;
+  }
+  .tech-article th {
+    @apply bg-surface-2/60 font-mono text-[12px] font-semibold uppercase tracking-[0.06em] text-faint;
+  }
+  .tech-article tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .tech-article tbody tr:hover td {
+    background: rgba(240, 180, 41, 0.035);
+  }
+
+  /*
+   * ASCII diagrams. A mono block diagram on a terminal-themed site is the
+   * one case where a "picture" should stay text — it copies, diffs, and
+   * scales with the type. The colour spans exist because a diagram needs to
+   * distinguish its parts; .b borrows the blueprint-grid blue so the extra
+   * hues still belong to the system.
+   */
+  .tech-article .diagram {
+    @apply my-5 overflow-x-auto rounded-lg border border-line bg-surface p-5 font-mono text-[13px] leading-[1.5] text-ink/85 shadow-e1;
+    white-space: pre;
+  }
+  .tech-article .diagram .a { color: var(--color-accent); }
+  .tech-article .diagram .b { color: #7aa2d8; }
+  .tech-article .diagram .c { color: var(--color-accent-2); }
+  .tech-article .diagram .w { color: var(--color-amber); }
+  .tech-article .diagram .g { color: #5ec27e; }
+  .tech-article .diagram .m { color: var(--color-faint); }
+
+  .tech-article .pill {
+    @apply mb-0.5 mr-1 inline-block rounded-full border border-line bg-surface-2 px-2.5 py-0.5 font-mono text-[12px] text-muted;
+  }
+
+  .tech-article .kpi {
+    @apply my-5 flex flex-wrap gap-3;
+  }
+  .tech-article .kpi .box {
+    @apply min-w-[140px] rounded-lg border border-line bg-surface/70 px-4 py-3 shadow-e1;
+  }
+  .tech-article .kpi .v {
+    @apply block font-mono text-[22px] font-bold text-accent;
+    /* Set directly rather than @apply-ing .tnum — Tailwind v4 can't apply a
+       custom class declared in the same layer. */
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+  .tech-article .kpi .k {
+    @apply text-[12.5px] text-faint;
+  }
+
+  /* An artifact that keeps its own breadcrumb row still lands correctly. */
+  .tech-article .crumbs {
+    @apply mb-4 font-mono text-xs text-faint;
   }
 
   /* ── Project thumbnail: full colour on touch, duotone→colour on

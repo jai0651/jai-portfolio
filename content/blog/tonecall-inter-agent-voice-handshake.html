@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Two AI agents on a phone call should stop talking</title>
+<meta name="description" content="Tonecall is protocol middleware that works out when the peer on a phone call is also an AI agent, then drops the voice channel for a JSON side-channel — while staying in voice when the peer turns out to be a human." />
+<meta name="date" content="2026-08-13" />
+<meta name="tags" content="voice ai, protocols, agents, cpaas, latency" />
+</head>
+<body>
+<main>
+
+<p>Two AI voice agents pick up a phone call to each other. Today, both of them
+do speech-to-text, then think, then text-to-speech, for <em>every single turn</em>.
+They are using a phone call to send each other words they could have sent as
+JSON — paying codec latency, model latency and per-minute telephony charges
+to do it.</p>
+
+<p><a href="https://github.com/jai0651/tonecall">Tonecall</a> is the middleware
+that lets them notice they are both machines and switch to a data channel
+mid-call. The phone call stays open, because a human might walk in at any
+moment. Only the transport for the actual negotiation changes.</p>
+
+<div class="diagram">Without Tonecall                   With Tonecall
+<span class="m">────────────────</span>                   <span class="m">─────────────</span>
+                                   ╭── voice ──╮   <span class="m">intro: "hi, this is…"    ~10s</span>
+  <span class="a">A</span> ── <span class="w">voice</span> ── <span class="b">B</span>                  <span class="a">A</span>           <span class="b">B</span>
+  <span class="m">every single turn</span>                ╰─── <span class="g">JSON</span> ──╯   <span class="m">the actual deal           ~3s</span>
+  <span class="w">4–6 s per turn</span>
+                                   ╭── voice ──╮   <span class="m">goodbye: "thanks, bye"    ~5s</span>
+                                   <span class="a">A</span>           <span class="b">B</span>
+
+  <span class="w">slow + expensive</span>                   <span class="g">voice only where it earns its keep</span></div>
+
+<h2><span class="num">1</span>Why this is a protocol problem, not a prompt problem</h2>
+
+<p>The instinct is to solve this in the model: tell each agent to be terse, or
+to detect a robot from transcript style. That fails for a structural reason —
+by the time a transcript exists, you have <em>already paid</em> the cost you
+were trying to avoid. STT ran. The LLM ran. TTS ran. The 4–6 seconds are
+spent.</p>
+
+<p>Detection has to happen <strong>below</strong> the language layer, in the
+audio path, before anyone transcribes anything. That makes this a middleware
+and signalling problem.</p>
+
+<div class="callout">
+<span class="label">The constraint that shapes everything</span>
+You do not control the channel. Between the two agents sits the public phone
+network: carriers, codecs, jitter buffers, and a CPaaS provider in the middle.
+You cannot add a header. Anything you want to say out-of-band has to survive
+being turned into audio and back.
+</div>
+
+<h2><span class="num">2</span>Just enough telephony</h2>
+
+<p>A phone call is two conversations at once. <strong>SIP</strong> is
+signalling — ring, answer, hang up; roughly HTTP for calls.
+<strong>RTP</strong> is the audio itself, usually 20 ms of compressed sound per
+packet. A <strong>CPaaS</strong> provider operates all of that and exposes it as
+a REST API, so this project never touches SIP or RTP directly.</p>
+
+<p>When somebody dials a number you own — a <strong>DID</strong> — the provider
+answers and asks your server what to do, by POSTing to a preconfigured
+<strong>answer URL</strong>. You reply with a small XML document of call-control
+verbs.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Verb</th><th>What it does</th><th>Used here</th></tr></thead>
+<tbody>
+<tr><td><code>&lt;Dial&gt;</code></td><td>Ring another number and bridge this call to it</td><td>yes — the bridge</td></tr>
+<tr><td><code>&lt;Stream&gt;</code></td><td>Open a WebSocket and pump the call's audio through it</td><td>yes — the audio tap</td></tr>
+<tr><td><code>&lt;Speak&gt;</code></td><td>Say text to the caller</td><td>intro / outro</td></tr>
+<tr><td><code>&lt;Hangup&gt;</code></td><td>End the call</td><td>teardown</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>&lt;Stream&gt;</code> is the primitive that makes the whole thing
+possible: it turns a phone call into a WebSocket of audio frames you can
+inspect in real time.</p>
+
+<h2><span class="num">3</span>The handshake: asking "are you a machine?" in audio</h2>
+
+<p>The channel only carries sound, so the probe has to <em>be</em> sound. The
+answer is <strong>in-band DTMF</strong> — the touch-tone digits every phone
+system on earth already forwards reliably. Each agent emits a short tone
+sequence acting as a pairing token; a listener that replies with a
+well-formed token is, by construction, not a human.</p>
+
+<p>This is a deliberately old idea. DTMF survives transcoding, works through
+carriers nobody has an agreement with, and needs no cooperation from the
+network. The comparison I keep coming back to: <em>fax machines, but for
+modern AI agents</em>. Two machines screeching at each other briefly to agree
+on a better way to talk.</p>
+
+<div class="diagram">caller ──▶ <span class="a">+1-NUMBER</span> ──▶ CPaaS provider ──▶ answer URL ──▶ <span class="a">tonecall</span>
+                        <span class="m">(SIP + RTP)</span>        <span class="m">(XML verbs)</span>     <span class="m">middleware</span>
+                                                                 │
+                   ┌─────────────────────────────────────────────┴────┐
+                   │                                                  │
+            <span class="g">peer is an AGENT</span>                                  <span class="w">peer is a HUMAN</span>
+                   │                                                  │
+   voice intro ────┤                                    ┌──▶ STT ──▶ LLM ──┐
+   <span class="g">DTMF pairing</span> ───┤                                    └─── TTS ◀─────────┘
+   <span class="g">JSON /data WS</span> ──┤                                         <span class="w">4–6 s per turn</span>
+   voice outro ────┘</div>
+
+<h2><span class="num">4</span>Four phases</h2>
+
+<p>A completed agent-to-agent call moves through four phases. The two voice
+phases are not decoration — they are what keeps the call legible to a human
+who joins late, and what leaves an audible record of what was agreed.</p>
+
+<div class="diagram"> <span class="m">t=0s        ~10s              ~13s                    ~18s</span>
+  │           │                 │                       │
+  ├── <span class="a">DIAL</span> ───┼──── <span class="c">INTRO</span> ──────┼─── <span class="g">DATA (JSON)</span> ───────┼── <span class="c">OUTRO</span> ──▶ hangup
+  │  <span class="m">bridge</span>   │  <span class="m">voice,</span>          │  <span class="m">side-channel, the</span>     │  <span class="m">voice,</span>
+  │  <span class="m">+ DTMF</span>   │  <span class="m">human-audible</span>   │  <span class="m">real negotiation</span>      │  <span class="m">human-audible</span>
+  │  <span class="m">pairing</span>  │                 │                       │
+  └ <span class="m">both legs</span>  └ <span class="m">proves the</span>      └ <span class="m">one round trip —</span>       └ <span class="m">leaves an</span>
+    <span class="m">on one</span>       <span class="m">call is real</span>       <span class="m">no STT, no TTS,</span>         <span class="m">audible record</span>
+    <span class="m">bridge</span>       <span class="m">to a listener</span>      <span class="m">no LLM voice latency</span></div>
+
+<div class="kpi">
+  <div class="box"><span class="v">~10s</span><span class="k">voice intro</span></div>
+  <div class="box"><span class="v">~3s</span><span class="k">JSON side-channel</span></div>
+  <div class="box"><span class="v">~5s</span><span class="k">voice outro</span></div>
+  <div class="box"><span class="v">4–6s</span><span class="k">per turn, human path</span></div>
+</div>
+
+<p>The number that matters is the middle one. Everything the two agents
+actually need to settle happens in a single round trip over a WebSocket,
+instead of <em>n</em> turns of 4–6 seconds each. The saving scales with how
+much the agents have to say to each other.</p>
+
+<h2><span class="num">5</span>The human path is the real test</h2>
+
+<p>An optimisation that only works in the happy case is not shippable here.
+If the peer never answers the DTMF probe, it is a person, and the system has
+to fall through to a genuine voice agent — STT, an LLM, TTS, in a loop — with
+no hint that anything was ever attempted.</p>
+
+<div class="callout warn">
+<span class="label">Where this gets sharp</span>
+The fallback cannot be a timeout the caller can hear. A human who says
+"hello?" into two seconds of tones has already had a bad experience. The
+probe has to be short enough to hide inside a normal greeting, which puts a
+hard ceiling on how elaborate the handshake is allowed to be.
+</div>
+
+<h2><span class="num">6</span>Federated, not centralised</h2>
+
+<p>The first build put both agents behind one orchestrator. That is easier and
+it is also cheating: if one process owns both sides, it never has to discover
+anything, and the protocol is doing no work.</p>
+
+<p>The current design runs two independent middleware instances, each owning
+exactly one agent. They pair through the in-band DTMF exchange plus a broker
+that resolves which instance owns a token.</p>
+
+<div class="diagram">        ┌──────────────── <span class="a">instance A :3000</span> ────────────────┐
+        │  agent: <span class="a">vegetable_vendor</span>          broker           │
+        └───────────┬──────────────────────────────┬───────────┘
+                    │  <span class="g">in-band DTMF</span> over the     │  <span class="m">pairing lookup</span>
+                    │  <span class="m">bridged audio path</span>        │  <span class="m">who owns this token?</span>
+        ┌───────────┴──────────────────────────────┴───────────┐
+        │  agent: <span class="b">pizza_shop</span>                                │
+        └──────────────── <span class="b">instance B :3001</span> ────────────────┘
+
+  <span class="m">Neither instance holds both agents. Pairing is discovered in-band —</span>
+  <span class="m">which is the point. No shared orchestrator, no single owner.</span></div>
+
+<p>You can run the whole topology locally with no telephony account and no API
+keys at all, because the LLM, STT and TTS are stubbable:</p>
+
+<pre><code>npm run dev:a    # vegetable_vendor + broker on :3000
+npm run dev:b    # pizza_shop on :3001
+
+curl -X POST http://localhost:3000/api/simulate \
+  -H 'Content-Type: application/json' \
+  -d '{"peerBase":"http://localhost:3001"}'</code></pre>
+
+<p>Instance B forwards its events to instance A, so a single dashboard shows
+both legs of the call. Being able to exercise a four-phase telephony protocol
+with <code>USE_STUBS=true</code> and two terminals is the single thing that
+made this tractable to build.</p>
+
+<h2><span class="num">7</span>What I would change</h2>
+
+<ul>
+<li><strong>DTMF is a low-bandwidth probe.</strong> It is perfect for "are you
+a machine, and what is your token" and hopeless for anything richer. A
+capability exchange — which schema version, which codecs — wants to happen
+over the data channel immediately after pairing, not in tones.</li>
+<li><strong>The broker is a soft centralisation.</strong> Pairing is discovered
+in-band, but token resolution still goes through a known endpoint. Fully
+peer-to-peer discovery is the honest end state.</li>
+<li><strong>Trust is unresolved.</strong> Right now a well-formed token is
+sufficient to be believed. Anything real needs the side-channel authenticated,
+or you have built a machine that will happily negotiate with whoever tones at
+it first.</li>
+</ul>
+
+<p>The design docs and a page-by-page walkthrough of the current code live in
+the repo under <code>docs/</code>. The protocol writeup covering the
+<code>&lt;Dial&gt;</code> bridge and DTMF pairing is
+<code>docs/avip-1-dial.md</code>.</p>
+
+</main>
+</body>
+</html>

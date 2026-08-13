@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { FaStar, FaCodeBranch, FaGithub } from "react-icons/fa";
 import { FiExternalLink } from "react-icons/fi";
-import { Skeleton } from "@/components/ui/skeleton";
+import Section from "./Section";
+import SectionHeader from "./SectionHeader";
+import { Skeleton } from "./ui/skeleton";
+import { fadeUp, step } from "@/lib/motion";
 import type { GithubData } from "@/lib/github";
 
 const LANG_COLORS: Record<string, string> = {
@@ -30,8 +33,7 @@ const LANG_COLORS: Record<string, string> = {
   Vue: "#41b883",
 };
 
-const langColor = (l: string | null) =>
-  (l && LANG_COLORS[l]) || "#818cf8";
+const langColor = (l: string | null) => (l && LANG_COLORS[l]) || "#818cf8";
 
 const MAX_REPOS = 6;
 
@@ -52,38 +54,35 @@ const GithubSection = () => {
   if (failed || (!loading && !data)) return null;
 
   return (
-    <section className="container mx-auto px-4 pb-8">
-      <div className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="mb-3 flex items-center gap-2 font-mono text-xs text-faint">
-            <span className="text-accent-dim">$</span> gh repo list --sort=stars
-          </p>
-          <h2 className="h2">
+    <Section tone="alt" space="md">
+      <SectionHeader
+        cmd="gh repo list --sort=stars"
+        title={
+          <>
             Open <span className="gradient-text">source</span>
-          </h2>
-        </div>
-        {data?.profile && (
-          <a
-            href={data.profile.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 self-start rounded-md border border-line bg-surface-2/60 px-4 py-2 font-mono text-sm text-muted transition-colors hover:border-accent/50 hover:text-accent"
-          >
-            <FaGithub /> @{data.profile.login}
-          </a>
-        )}
-      </div>
+          </>
+        }
+        sub="Public repositories, ranked by stars."
+        meta={
+          data?.profile && (
+            <a
+              href={data.profile.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md border border-line bg-surface-2/60 px-4 py-2 font-mono text-sm text-muted shadow-e1 transition-all duration-200 ease-out-quint hover:-translate-y-px hover:border-accent/50 hover:text-accent"
+            >
+              <FaGithub /> @{data.profile.login}
+            </a>
+          )
+        }
+      />
 
       {/* Stats strip */}
       {loading ? (
-        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 rounded-lg" />
-          ))}
-        </div>
+        <Skeleton className="mb-8 h-[106px] w-full" />
       ) : (
         data && (
-          <div className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-4">
+          <div className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line shadow-e1 md:grid-cols-4">
             {[
               { label: "repositories", value: data.stats.publicRepos },
               { label: "total stars", value: data.stats.totalStars },
@@ -91,10 +90,10 @@ const GithubSection = () => {
               { label: "followers", value: data.stats.followers },
             ].map((s) => (
               <div key={s.label} className="bg-surface p-5">
-                <p className="accent-text font-mono text-3xl font-semibold">
+                <p className="tnum accent-text font-mono text-3xl font-semibold tracking-tight">
                   {s.value}
                 </p>
-                <p className="mt-1 font-mono text-sm text-muted">{s.label}</p>
+                <p className="mt-1 text-sm text-muted">{s.label}</p>
               </div>
             ))}
           </div>
@@ -103,34 +102,32 @@ const GithubSection = () => {
 
       {/* Repo cards */}
       {loading ? (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-44 rounded-lg" />
+            <Skeleton key={i} className="h-44" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {data?.repos.slice(0, MAX_REPOS).map((repo, i) => (
             <motion.a
               key={repo.name}
               href={repo.url}
               target="_blank"
               rel="noopener noreferrer"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-40px" }}
-              transition={{ duration: 0.4, delay: (i % 3) * 0.06 }}
-              className="group flex flex-col rounded-lg border border-line bg-surface/70 p-5 transition-all duration-200 hover:-translate-y-1 hover:border-accent/40"
+              {...fadeUp}
+              transition={step(i % 3)}
+              className="card card-lift group flex flex-col p-5"
             >
-              <div className="flex items-start justify-between">
-                <h3 className="flex items-center gap-2 font-mono font-semibold text-ink group-hover:text-accent">
-                  <FaGithub className="text-faint group-hover:text-accent" />
-                  {repo.name}
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="h4 flex min-w-0 items-center gap-2 text-ink group-hover:text-accent">
+                  <FaGithub className="shrink-0 text-faint group-hover:text-accent" />
+                  <span className="truncate">{repo.name}</span>
                 </h3>
-                <FiExternalLink className="text-faint transition-colors group-hover:text-accent" />
+                <FiExternalLink className="mt-0.5 shrink-0 text-faint transition-colors group-hover:text-accent" />
               </div>
 
-              <p className="mt-2 line-clamp-2 flex-1 text-sm text-muted">
+              <p className="mt-2 line-clamp-2 flex-1 text-[13px] leading-relaxed text-muted">
                 {repo.description || "No description provided."}
               </p>
 
@@ -144,7 +141,7 @@ const GithubSection = () => {
                 </div>
               )}
 
-              <div className="mt-4 flex items-center gap-4 font-mono text-xs text-muted">
+              <div className="tnum mt-4 flex items-center gap-4 border-t border-line/60 pt-3 font-mono text-xs text-muted">
                 {repo.language && (
                   <span className="flex items-center gap-1.5">
                     <span
@@ -165,7 +162,7 @@ const GithubSection = () => {
           ))}
         </div>
       )}
-    </section>
+    </Section>
   );
 };
 

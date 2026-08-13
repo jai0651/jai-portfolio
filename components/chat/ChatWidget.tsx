@@ -117,7 +117,7 @@ const ChatWidget = () => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 20 }}
             onClick={() => setOpen(true)}
-            className="group fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-md bg-accent py-3 pl-4 pr-5 font-mono text-sm font-medium text-primary shadow-[0_10px_30px_-10px_rgba(126,231,135,0.6)] transition-all hover:bg-accent-hover"
+            className="group fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-lg bg-accent py-3 pl-4 pr-5 font-mono text-sm font-medium text-primary shadow-glow-lg transition-all duration-200 ease-out-quint hover:-translate-y-px hover:bg-accent-hover"
             aria-label="Open AI chat assistant"
           >
             <span className="relative flex h-5 w-5 items-center justify-center">
@@ -142,10 +142,11 @@ const ChatWidget = () => {
             {/* Header — terminal bar */}
             <div className="term-bar justify-between">
               <div className="flex items-center gap-2">
-                <span className="term-dot bg-[#ff5f56]/70" />
-                <span className="term-dot bg-[#ffbd2e]/70" />
-                <span className="term-dot bg-[#27c93f]/70" />
-                <span className="ml-2 font-mono text-xs text-muted">
+                <span
+                  aria-hidden
+                  className="h-3.5 w-1 rounded-sm bg-accent shadow-[0_0_10px_rgba(240,180,41,0.7)]"
+                />
+                <span className="font-mono text-xs text-muted">
                   jai-assistant <span className="text-accent-dim">— zsh</span>
                 </span>
               </div>
@@ -203,9 +204,9 @@ const ChatWidget = () => {
                   >
                     {m.content || (
                       <span className="inline-flex gap-1">
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:-0.3s]" />
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:-0.15s]" />
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-white/50" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-muted [animation-delay:-0.3s]" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-muted [animation-delay:-0.15s]" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-muted" />
                       </span>
                     )}
                   </div>
@@ -218,9 +219,9 @@ const ChatWidget = () => {
                   <div className="flex justify-start">
                     <div className="rounded-md rounded-tl-sm border border-line bg-surface-2/60 px-4 py-3">
                       <span className="inline-flex gap-1">
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:-0.3s]" />
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:-0.15s]" />
-                        <span className="h-2 w-2 animate-bounce rounded-full bg-white/50" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-muted [animation-delay:-0.3s]" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-muted [animation-delay:-0.15s]" />
+                        <span className="h-2 w-2 animate-bounce rounded-full bg-muted" />
                       </span>
                     </div>
                   </div>

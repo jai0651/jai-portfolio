@@ -4,22 +4,26 @@ import { Providers } from "@/components/Providers";
 import { VisitorTracker } from "@/components/VisitorTracker";
 import SiteShell from "@/components/SiteShell";
 
+// Mono carries the identity: headings, nav, labels, chips, numerals, shell
+// output. Inter carries prose. Both swap so text is never invisible on load.
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700"],
   variable: "--font-jetbrainsMono",
+  display: "swap",
 });
 
 const inter = Inter({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
+  weight: ["400", "500", "600", "700"],
   variable: "--font-inter",
+  display: "swap",
 });
 
 export const metadata = {
-  title: "Jai Shankar — AI / LLM Engineer",
+  title: "Jai Shankar — Software Engineer / AI & LLM Engineer",
   description:
-    "AI/LLM engineer and software engineer working at the intersection of software, machine learning, maths and physics. LLM agents in production, ML systems, and differentiable-physics research (IIT Delhi).",
+    "Software engineer and AI/LLM engineer working at the intersection of software, machine learning, maths and physics. LLM agents in production, ML systems, and differentiable-physics research (IIT Delhi).",
 };
 
 export default function RootLayout({

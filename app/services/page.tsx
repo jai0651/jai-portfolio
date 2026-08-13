@@ -4,7 +4,10 @@ import { BsArrowUpRight } from "react-icons/bs";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import Section from "@/components/Section";
+import SectionHeader from "@/components/SectionHeader";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fadeUp, step } from "@/lib/motion";
 
 interface Service {
   id: string;
@@ -37,80 +40,69 @@ const Services = () => {
 
   if (loading) {
     return (
-      <section className="container mx-auto px-4 py-16 xl:py-24">
+      <Section space="md">
         <div className="mb-14 max-w-2xl space-y-4">
           <Skeleton className="h-4 w-28" />
           <Skeleton className="h-12 w-72" />
           <Skeleton className="h-4 w-full max-w-md" />
         </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="space-y-6 rounded-3xl border border-white/10 bg-white/[0.03] p-8"
-            >
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-12 w-16" />
-                <Skeleton className="h-12 w-12 rounded-full" />
-              </div>
-              <Skeleton className="h-7 w-2/3" />
-              <Skeleton className="h-4 w-full" />
-            </div>
+            <Skeleton key={i} className="h-56 rounded-2xl" />
           ))}
         </div>
-      </section>
+      </Section>
     );
   }
 
   return (
-    <section className="container mx-auto px-4 py-16 xl:py-24">
-      <div className="mb-14 max-w-2xl">
-        <p className="mb-3 font-mono text-sm uppercase tracking-[0.3em] text-accent/90">
-          What I do
-        </p>
-        <h2 className="h2 mb-4">
-          Services I <span className="gradient-text">offer</span>
-        </h2>
-        <p className="text-white/60">
-          From idea to production — design, development, and applied AI, tailored
-          to your goals.
-        </p>
-      </div>
+    <Section space="md">
+      <SectionHeader
+        as="h1"
+        cmd="cat ~/services.md"
+        title={
+          <>
+            Services I <span className="gradient-text">offer</span>
+          </>
+        }
+        sub="From idea to production — design, development, and applied AI, tailored to your goals."
+      />
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         {services.map((service, index) => (
-          <motion.div
-            key={service.id}
-            initial={{ opacity: 0, y: 24 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.5, delay: index * 0.08 }}
-          >
+          <motion.div key={service.id} {...fadeUp} transition={step(index % 2)}>
             <Link
               href={service.href || "#"}
-              className="group relative block h-full overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-8 transition-all duration-300 hover:border-accent/40 hover:bg-white/[0.05]"
+              className="card card-lift group relative block h-full overflow-hidden rounded-2xl p-8"
             >
-              <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-accent/10 blur-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+              <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-accent/10 opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100" />
+
               <div className="flex items-start justify-between">
-                <span className="font-mono text-5xl font-bold text-transparent text-outline transition-all duration-500 group-hover:text-outline-hover">
+                <span className="text-outline group-hover:text-outline-hover tnum font-mono text-5xl font-bold text-transparent transition-all duration-500">
                   {service.num}
                 </span>
-                <span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition-all duration-500 group-hover:rotate-45 group-hover:border-accent/50 group-hover:bg-accent/10 group-hover:text-accent">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface-2 text-muted transition-all duration-500 ease-out-quint group-hover:rotate-45 group-hover:border-accent/50 group-hover:bg-accent/10 group-hover:text-accent">
                   <BsArrowUpRight className="text-xl" />
                 </span>
               </div>
-              <h3 className="mt-8 text-2xl font-bold transition-colors duration-300 group-hover:text-accent">
+
+              <h3 className="h3 mt-8 text-ink transition-colors duration-300 group-hover:text-accent">
                 {service.title}
               </h3>
-              <p className="mt-3 text-white/60">{service.description}</p>
+              <p className="prose-measure mt-3 text-[15px] leading-relaxed text-muted">
+                {service.description}
+              </p>
             </Link>
           </motion.div>
         ))}
+
         {services.length === 0 && (
-          <p className="text-white/50">No services listed yet.</p>
+          <p className="font-mono text-sm text-muted">
+            <span className="text-accent-dim">#</span> no services listed yet.
+          </p>
         )}
       </div>
-    </section>
+    </Section>
   );
 };
 

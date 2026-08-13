@@ -3,12 +3,16 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Interests from "@/components/Interests";
 import Photo from "@/components/Photo";
+import Section from "@/components/Section";
+import SectionHeader from "@/components/SectionHeader";
 import Social from "@/components/Social";
 import Stats from "@/components/Stats";
 import TerminalHero from "@/components/TerminalHero";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fadeUp, fadeUpNow, lead, step } from "@/lib/motion";
 import { FiDownload, FiArrowUpRight, FiGithub } from "react-icons/fi";
 import { HiSparkles } from "react-icons/hi2";
 
@@ -30,11 +34,30 @@ const DEFAULT_BIO =
   "I build systems where software meets machine learning, maths and physics — from LLM agents in production to differentiable-physics research.";
 
 // Curated, hand-picked highlights — read like a git log of recent work.
+// Ordered as a narrative: production work, then from-scratch ML, then research.
 const HIGHLIGHTS = [
   {
     tag: "feat(prod)",
     title: "Support-debug AI agent",
     desc: "An LLM agent running in production that triages incoming support issues, reproduces them against logs, and root-causes bugs — cutting time-to-diagnosis for the team.",
+    href: null as string | null,
+  },
+  {
+    tag: "feat(voice)",
+    title: "Voice agent from scratch",
+    desc: "VAD, ASR, TTS and the real-time pipeline connecting them — built layer by layer in PyTorch rather than calling a pretrained black box. Swapping a BiGRU+CTC baseline for a Conformer halved word error on identical audio and ran 2.7× faster.",
+    href: "https://github.com/jai0651/VAD-ASR",
+  },
+  {
+    tag: "feat(local)",
+    title: "Fully local voice notetaker",
+    desc: "Talk to a Mac, get organised Obsidian notes. Whisper large-v3-turbo on MLX and a local Qwen through Ollama, so the audio and the notes never leave the machine.",
+    href: "https://github.com/jai0651/Local-AI-voice-notemaker",
+  },
+  {
+    tag: "feat(audio)",
+    title: "Real-time call denoiser",
+    desc: "DeepFilterNet3 sitting between the real microphone and a virtual audio device, so Zoom, Meet or a softphone only ever receive the clean signal.",
     href: null as string | null,
   },
   {
@@ -82,25 +105,31 @@ export default function Home() {
 
   if (loading) {
     return (
-      <section className="container mx-auto px-4 pt-8 xl:pt-12">
+      <Section tone="hero" space="none" className="pb-16 pt-8 xl:pb-24 xl:pt-12">
         <div className="flex flex-col-reverse items-center gap-10 xl:flex-row xl:items-start xl:justify-between">
-          <Skeleton className="h-[420px] w-full max-w-2xl rounded-lg" />
-          <Skeleton className="h-[360px] w-[260px] shrink-0 rounded-lg xl:w-[380px]" />
+          <div className="w-full max-w-2xl space-y-5">
+            <Skeleton className="h-[420px] w-full rounded-xl" />
+            <div className="flex gap-3">
+              <Skeleton className="h-12 w-44" />
+              <Skeleton className="h-12 w-36" />
+            </div>
+          </div>
+          <Skeleton className="h-[400px] w-[260px] shrink-0 rounded-xl xl:w-[380px]" />
         </div>
-      </section>
+      </Section>
     );
   }
 
   return (
-    <section className="overflow-hidden">
-      <div className="container mx-auto px-4 pt-8 xl:pt-12">
+    <>
+      {/* ── Hero ─────────────────────────────────────────────────── */}
+      <Section tone="hero" space="none" className="pb-16 pt-8 xl:pb-24 xl:pt-12">
         <div className="flex flex-col-reverse items-center gap-10 xl:flex-row xl:items-start xl:justify-between">
-          {/* ── Interactive terminal + actions ────────────────── */}
+          {/* Interactive terminal + actions */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: "easeOut" }}
-            className="w-full max-w-2xl space-y-5"
+            {...fadeUpNow}
+            transition={lead()}
+            className="w-full max-w-2xl space-y-6"
           >
             <TerminalHero
               name={profile.profile_name || "Jai Shankar"}
@@ -110,7 +139,12 @@ export default function Home() {
             />
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <Button onClick={openChat} size="lg" className="w-full sm:w-auto">
+              <Button
+                onClick={openChat}
+                variant="cta"
+                size="lg"
+                className="w-full sm:w-auto"
+              >
                 <HiSparkles className="text-base" />
                 chat with my AI
               </Button>
@@ -128,43 +162,47 @@ export default function Home() {
               </Button>
             </div>
 
-            <div className="flex items-center gap-3 font-mono text-sm">
-              <span className="text-faint">find me</span>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs uppercase tracking-[0.18em] text-faint">
+                find me
+              </span>
+              <span className="h-px flex-1 bg-line sm:max-w-8" />
               <Social
                 containerStyles="flex gap-2"
-                iconStyles="flex h-9 w-9 items-center justify-center rounded-md border border-line bg-surface-2/60 text-muted transition-all duration-200 hover:border-accent/50 hover:text-accent hover:-translate-y-0.5"
+                iconStyles="flex h-9 w-9 items-center justify-center rounded-md border border-line bg-surface-2/60 text-muted shadow-e1 transition-all duration-200 ease-out-quint hover:border-accent/50 hover:text-accent hover:-translate-y-0.5"
               />
             </div>
           </motion.div>
 
-          {/* ── Avatar ────────────────────────────────────────── */}
+          {/* Avatar */}
           <div className="shrink-0">
             <Photo src={profile.profile_photo} />
           </div>
         </div>
-      </div>
+      </Section>
 
-      {/* ── Recent work — reads like a git log ──────────────────── */}
-      <div className="container mx-auto px-4 py-16 xl:py-20">
-        <p className="mb-6 font-mono text-xs text-faint">
-          <span className="text-accent-dim">$</span> git log --oneline --recent
-        </p>
+      {/* ── Recent work — reads like a git log ───────────────────── */}
+      <Section tone="alt" space="md">
+        <SectionHeader
+          cmd="git log --oneline --recent"
+          title={
+            <>
+              Recently <span className="gradient-text">shipped</span>
+            </>
+          }
+          sub="Production LLM agents, speech models built from the ground up, local-first AI tooling, and research code."
+        />
+
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {HIGHLIGHTS.map((h, i) => {
             const Wrapper = h.href ? "a" : "div";
             return (
-              <motion.div
-                key={h.title}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-60px" }}
-                transition={{ duration: 0.45, delay: i * 0.08 }}
-              >
+              <motion.div key={h.title} {...fadeUp} transition={step(i)}>
                 <Wrapper
                   {...(h.href
                     ? { href: h.href, target: "_blank", rel: "noopener noreferrer" }
                     : {})}
-                  className="group flex h-full flex-col gap-3 rounded-lg border border-line bg-surface/70 p-5 transition-all duration-200 hover:border-accent/40 hover:bg-surface-2/60"
+                  className="card card-lift group flex h-full flex-col gap-3 p-5"
                 >
                   <div className="flex items-center justify-between">
                     <span className="chip text-accent">{h.tag}</span>
@@ -172,12 +210,12 @@ export default function Home() {
                       <FiGithub className="text-faint transition-colors group-hover:text-accent" />
                     )}
                   </div>
-                  <h3 className="font-mono text-base font-semibold text-ink group-hover:text-accent">
+                  <h3 className="h4 text-ink transition-colors group-hover:text-accent">
                     {h.title}
                   </h3>
-                  <p className="text-sm text-muted">{h.desc}</p>
+                  <p className="text-[15px] leading-relaxed text-muted">{h.desc}</p>
                   {h.href && (
-                    <span className="mt-auto inline-flex items-center gap-1 font-mono text-xs text-accent-dim group-hover:text-accent">
+                    <span className="mt-auto inline-flex items-center gap-1 pt-1 font-mono text-xs text-accent-dim transition-colors group-hover:text-accent">
                       view source <FiArrowUpRight />
                     </span>
                   )}
@@ -186,13 +224,24 @@ export default function Home() {
             );
           })}
         </div>
-      </div>
+      </Section>
+
+      {/* ── Interests ───────────────────────────────────────────── */}
+      <Interests />
 
       {/* ── Skills ticker ───────────────────────────────────────── */}
       {skills.length > 0 && (
-        <div className="relative my-4 overflow-hidden border-y border-line py-5">
-          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-primary to-transparent" />
-          <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-primary to-transparent" />
+        <div
+          className="overflow-hidden border-b border-line py-5"
+          /* Mask instead of gradient overlays so the fade works on any
+             background tone rather than only over --color-primary. */
+          style={{
+            maskImage:
+              "linear-gradient(to right, transparent, #000 7%, #000 93%, transparent)",
+            WebkitMaskImage:
+              "linear-gradient(to right, transparent, #000 7%, #000 93%, transparent)",
+          }}
+        >
           <div className="flex w-max animate-marquee gap-3">
             {[...skills, ...skills].map((skill, i) => (
               <span
@@ -207,8 +256,7 @@ export default function Home() {
         </div>
       )}
 
-      <div className="pt-16" />
       <Stats />
-    </section>
+    </>
   );
 }

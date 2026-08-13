@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import CountUp from "react-countup";
+import Section from "./Section";
+import SectionHeader from "./SectionHeader";
+import { Skeleton } from "./ui/skeleton";
 
 interface StatsData {
   stats_years?: string;
@@ -38,30 +41,33 @@ const Stats = () => {
     { key: "commits", num: parseInt(statsData.stats_commits || "200"), text: "commits pushed" },
   ];
 
-  if (loading) return null;
-
   return (
-    <section className="container mx-auto px-4 pb-20">
-      <p className="mb-4 font-mono text-xs text-faint">
-        <span className="text-accent-dim">$</span> stat --summary
-      </p>
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line xl:grid-cols-4">
-        {stats.map((item) => (
-          <div
-            key={item.key}
-            className="group bg-surface p-6 transition-colors duration-300 hover:bg-surface-2"
-          >
-            <div className="flex items-baseline gap-1 font-mono">
-              <span className="accent-text text-4xl font-semibold xl:text-5xl">
-                <CountUp end={item.num} duration={2.2} delay={0.3} />
-              </span>
-              <span className="accent-text text-2xl">+</span>
+    <Section space="md">
+      <SectionHeader cmd="stat --summary" />
+
+      {loading ? (
+        <Skeleton className="h-[124px] w-full xl:h-[132px]" />
+      ) : (
+        /* gap-px over a line-coloured background draws true hairline
+           dividers without doubling borders at the seams. */
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line shadow-e1 xl:grid-cols-4">
+          {stats.map((item) => (
+            <div
+              key={item.key}
+              className="bg-surface p-6 transition-colors duration-300 ease-out-quint hover:bg-surface-2"
+            >
+              <div className="flex items-baseline gap-0.5 font-mono">
+                <span className="tnum accent-text text-4xl font-semibold tracking-tight xl:text-5xl">
+                  <CountUp end={item.num} duration={2.2} delay={0.3} />
+                </span>
+                <span className="accent-text text-2xl">+</span>
+              </div>
+              <p className="mt-2 text-sm text-muted">{item.text}</p>
             </div>
-            <p className="mt-2 font-mono text-sm text-muted">{item.text}</p>
-          </div>
-        ))}
-      </div>
-    </section>
+          ))}
+        </div>
+      )}
+    </Section>
   );
 };
 

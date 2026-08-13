@@ -27,8 +27,16 @@ interface TerminalHeroProps {
   resumeUrl: string;
 }
 
-const ROLES = ["AI / LLM Engineer", "Software Engineer", "ML + physics tinkerer"];
-const INTERESTS = ["software engineering", "maths", "machine learning", "physics", "science"];
+const ROLES = ["Software Engineer", "AI / LLM Engineer", "ML + physics tinkerer"];
+const INTERESTS = [
+  "multimodal AI",
+  "voice AI",
+  "local & on-device models",
+  "astronomy",
+  "systems & computers",
+  "maths",
+  "physics",
+];
 
 const COMMANDS = [
   "help",
@@ -240,9 +248,19 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
         break;
 
       case "resume":
-      case "cv":
         print(cmd, <span className="text-muted">opening ~/resume …</span>);
         setTimeout(() => router.push("/resume"), 300);
+        break;
+
+      case "cv":
+      case "download":
+        print(
+          cmd,
+          <span className="text-muted">
+            downloading cv → <OutLink href={resumeUrl}>{resumeUrl.split("/").pop()}</OutLink>
+          </span>
+        );
+        window.open(resumeUrl, "_blank", "noopener,noreferrer");
         break;
 
       case "contact":
@@ -351,13 +369,22 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
   return (
     <div className="term w-full">
       <div className="term-bar">
-        <span className="term-dot bg-[#ff5f56]/70" />
-        <span className="term-dot bg-[#ffbd2e]/70" />
-        <span className="term-dot bg-[#27c93f]/70" />
-        <span className="ml-2 font-mono text-xs text-faint">jai@shankar: ~</span>
+        {/* A real shell status line — cwd, user, shell — rather than fake
+            window chrome. Same footprint, actual information. */}
+        <span aria-hidden className="h-3.5 w-1 rounded-sm bg-accent shadow-[0_0_10px_rgba(240,180,41,0.7)]" />
+        <span className="font-mono text-xs text-muted">jai@shankar</span>
+        <span className="font-mono text-xs text-faint">:</span>
+        <span className="font-mono text-xs text-accent-dim">~</span>
+        <span className="hidden items-center gap-2 sm:flex">
+          <span className="h-3 w-px bg-line-2" />
+          <span className="font-mono text-[11px] text-faint">zsh</span>
+        </span>
         <span className="ml-auto inline-flex items-center gap-2 font-mono text-xs text-accent-dim">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-          available for work
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-70" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
+          </span>
+          <span className="hidden sm:inline">available for work</span>
         </span>
       </div>
 
@@ -371,7 +398,9 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
           <p className="text-muted">
             <span className="text-accent-dim">$</span> whoami
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-ink xl:text-[32px]">{name}</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink xl:text-[32px]">
+            {name}
+          </h1>
           <p className="text-base text-muted">
             <span className="text-accent">&gt;</span>{" "}
             <span className="gradient-text font-medium">{role}</span>
@@ -433,7 +462,7 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
                   inputRef.current?.focus();
                 }
               }}
-              className="rounded-md border border-line bg-surface px-2.5 py-1 font-mono text-xs text-muted transition-colors hover:border-accent/50 hover:text-accent"
+              className="rounded-md border border-line bg-surface px-2.5 py-1 font-mono text-xs text-muted shadow-e1 transition-all duration-200 ease-out-quint hover:-translate-y-px hover:border-accent/50 hover:text-accent"
             >
               {isChat ? s : `$ ${s}`}
             </button>

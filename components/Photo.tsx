@@ -8,71 +8,82 @@ interface PhotoProps {
   src?: string;
 }
 
-const Corner = ({ className }: { className: string }) => (
-  <span
-    className={`absolute h-4 w-4 border-accent/60 ${className}`}
-  />
-);
-
+/*
+ * Editorial author portrait, deliberately not a specimen record.
+ *
+ * Three things were making this read as a booking photo and all three are
+ * gone: corner crop brackets (forensic framing), a `-rw-r--r--` permission
+ * string under a face (catalogued evidence), and a 1:1 crop (passport ratio).
+ *
+ * What replaces them: a 4:5 editorial crop, and a warm rim glow *behind* the
+ * panel. The subject wears black against a near-black ground, so without a
+ * backlight the face floats free of the body — the glow is what a portrait
+ * photographer would add to separate the two.
+ */
 const Photo = ({ src }: PhotoProps) => {
   const hasPhoto = src && src.trim() !== "";
   const isExternalUrl = hasPhoto && src.startsWith("http");
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.96 }}
+      initial={{ opacity: 0, scale: 0.97 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
-      className="relative w-[260px] xl:w-[380px]"
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+      className="relative w-[260px] xl:w-[360px]"
     >
-      {/* file caption */}
-      <div className="mb-2 flex items-center justify-between font-mono text-xs text-faint">
-        <span className="text-accent-dim">$ open ./avatar.png</span>
-        <span className="hidden sm:inline">1 × 1</span>
-      </div>
+      <p className="mb-3 font-mono text-xs text-faint">
+        <span className="text-accent-dim">$</span> open ./avatar.png
+      </p>
 
-      <div className="term relative">
-        <div className="term-bar">
-          <span className="term-dot bg-[#ff5f56]/70" />
-          <span className="term-dot bg-[#ffbd2e]/70" />
-          <span className="term-dot bg-[#27c93f]/70" />
-          <span className="ml-2 font-mono text-xs text-faint">avatar.png</span>
-        </div>
+      <div className="relative">
+        {/* Rim light — sits behind the panel and lifts the subject off the page. */}
+        <div
+          aria-hidden
+          className="absolute -inset-8 -z-10 bg-[radial-gradient(58%_48%_at_50%_28%,rgba(240,180,41,0.18),transparent_72%)] blur-2xl"
+        />
 
-        <div className="relative aspect-square overflow-hidden bg-surface-2">
-          {/* subtle green tint + scanline glow */}
-          <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-primary/40 via-transparent to-transparent" />
-          {hasPhoto ? (
-            isExternalUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={src}
-                alt="Jai Shankar"
-                className="h-full w-full object-cover object-center"
-              />
+        <div className="relative overflow-hidden rounded-2xl border border-line bg-surface-2 shadow-e3">
+          <div className="relative aspect-[4/5]">
+            {hasPhoto ? (
+              isExternalUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={src}
+                  alt="Jai Shankar"
+                  className="h-full w-full object-cover object-top"
+                />
+              ) : (
+                <Image
+                  src={src}
+                  priority
+                  quality={100}
+                  fill
+                  sizes="(min-width: 1200px) 360px, 260px"
+                  alt="Jai Shankar"
+                  className="object-cover object-top"
+                />
+              )
             ) : (
-              <Image
-                src={src}
-                priority
-                quality={100}
-                fill
-                alt="Jai Shankar"
-                className="object-cover object-center"
-              />
-            )
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <FaUser className="text-[120px] text-white/10 xl:text-[160px]" />
-            </div>
-          )}
+              <div className="flex h-full w-full items-center justify-center">
+                <FaUser className="text-[120px] text-line-2 xl:text-[150px]" />
+              </div>
+            )}
+
+            {/* Light grounding fade only at the very bottom, so the torso
+                settles into the frame instead of being erased by it. */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-primary/55 to-transparent"
+            />
+          </div>
+
+          {/* Hairline top highlight — the detail that makes a panel feel made. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
+          />
         </div>
       </div>
-
-      {/* corner ticks */}
-      <Corner className="-left-1.5 -top-1.5 border-l-2 border-t-2" />
-      <Corner className="-right-1.5 -top-1.5 border-r-2 border-t-2" />
-      <Corner className="-bottom-1.5 -left-1.5 border-b-2 border-l-2" />
-      <Corner className="-bottom-1.5 -right-1.5 border-b-2 border-r-2" />
     </motion.div>
   );
 };
