@@ -4,6 +4,13 @@ import { getFreeModels } from "@/lib/openrouterModels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/*
+ * Free OpenRouter models are slow — measured between 6s and 59s to first
+ * response. Vercel's default function timeout would kill the request before a
+ * fallback could answer, so the ceiling is raised for the fallback path.
+ * OpenAI normally answers in ~1.5s and never gets near this.
+ */
+export const maxDuration = 60;
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
@@ -147,16 +154,22 @@ ${knowledge}
   /** Models to try for a provider, best-first. */
   const candidatesFor = async (p: ProviderName): Promise<string[]> => {
     if (p === "openai") return [process.env.OPENAI_MODEL || "gpt-4o-mini"];
-    // Configured model first, then live-discovered free models — avoids
-    // retired or renamed slugs.
-    return Array.from(
-      new Set(
-        [
-          process.env.OPENROUTER_MODEL,
-          ...(await getFreeModels(process.env.OPENROUTER_API_KEY!)),
-        ].filter((m): m is string => Boolean(m))
-      )
-    ).slice(0, MAX_MODELS_TO_TRY);
+
+    /*
+     * An explicitly configured OPENROUTER_MODEL is a deliberate, verified
+     * choice and is used alone. Appending auto-discovered free models after it
+     * would be worse than having no fallback: measured behaviour on the free
+     * tier included empty responses, fabricated employment details, leaked
+     * chain-of-thought, and 59s latencies. The cross-provider fallback to
+     * OpenAI already covers a genuine outage.
+     */
+    if (process.env.OPENROUTER_MODEL) return [process.env.OPENROUTER_MODEL];
+
+    // Nothing configured — discover free models, avoiding retired slugs.
+    return (await getFreeModels(process.env.OPENROUTER_API_KEY!)).slice(
+      0,
+      MAX_MODELS_TO_TRY
+    );
   };
 
   const attempt = async (

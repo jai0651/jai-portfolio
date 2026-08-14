@@ -8,14 +8,23 @@ const STATIC_FREE_MODELS = [
   "qwen/qwen3-235b-a22b:free",
 ];
 
-// Families we prefer for a portfolio chat assistant, in priority order.
+/*
+ * Families we prefer for a portfolio chat assistant, in priority order.
+ *
+ * Ordered by measured behaviour on the two checks that matter here — refusing
+ * to invent facts about Jai, and declining off-topic requests — not by
+ * benchmark scores. nemotron leads because it was the only free family that
+ * passed both cleanly; gpt-oss and gemma are demoted because the free
+ * endpoints returned empty responses or fabricated employment details.
+ */
 const PREFERRED = [
-  "gpt-oss",
+  "nemotron",
   "llama",
   "qwen",
   "mistral",
-  "gemma",
   "deepseek",
+  "gpt-oss",
+  "gemma",
 ];
 
 interface OpenRouterModel {
