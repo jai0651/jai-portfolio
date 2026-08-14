@@ -12,6 +12,11 @@
     "db:studio": "prisma studio",
     "db:generate": "prisma generate"
   },
+  "//optionalDependencies": "Tailwind v4's CSS engine (lightningcss, oxide) ships per-platform native binaries as optional deps. npm omits the ones that don't match the machine that generated the lockfile (npm/cli#4828), so a lockfile written on macOS arm64 has no linux-x64 entry and `npm ci` on Vercel installs nothing for it — the require in lightningcss/node/index.js then fails at build. Declaring the linux binaries explicitly keeps them in the lockfile. They are skipped harmlessly on other platforms.",
+  "optionalDependencies": {
+    "@tailwindcss/oxide-linux-x64-gnu": "4.1.18",
+    "lightningcss-linux-x64-gnu": "1.30.2"
+  },
   "dependencies": {
     "@prisma/client": "^5",
     "@radix-ui/react-dialog": "^1.1.15",
