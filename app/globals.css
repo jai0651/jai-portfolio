@@ -88,6 +88,14 @@
   --animate-marquee-reverse: marquee-reverse 46s linear infinite;
   --animate-scan: scan 8s linear infinite;
   --animate-pulse-ring: pulse-ring 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* Acoustic sonar rings — three staggered copies read as a ripple. */
+  --animate-sonar: sonar 3.2s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  --animate-sonar-fast: sonar 1.5s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  /* Ambient idle ripple — slow and faint, so the orb feels acoustic at rest. */
+  --animate-sonar-slow: sonar-soft 4.8s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  --animate-breathe: breathe 4s ease-in-out infinite;
+  /* Slow sheen rotation gives the disc a sense of material. */
+  --animate-sheen: sheen 9s linear infinite;
 }
 
 @keyframes accordion-down {
@@ -124,6 +132,31 @@
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
+/*
+ * Sonar ripple for the voice UI. Rings travel outward and fade, which is the
+ * one visual metaphor everybody already reads as "sound".
+ */
+@keyframes sonar {
+  0%   { transform: scale(0.72); opacity: 0.5; }
+  70%  { opacity: 0; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+/* Same ripple, dialled right down for the resting state. */
+@keyframes sonar-soft {
+  0%   { transform: scale(0.85); opacity: 0.28; }
+  70%  { opacity: 0; }
+  100% { transform: scale(1.75); opacity: 0; }
+}
+/* Idle state: alive without asking for attention. */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50%      { transform: scale(1.045); opacity: 1; }
+}
+@keyframes sheen {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 /* Restrained breathing ring — exactly one primary CTA may use this. */
 @keyframes pulse-ring {
   0%, 100% {

@@ -14,8 +14,8 @@ import TerminalHero from "@/components/TerminalHero";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fadeUp, fadeUpNow, lead, step } from "@/lib/motion";
-import { FiDownload, FiArrowUpRight, FiGithub } from "react-icons/fi";
-import { HiSparkles } from "react-icons/hi2";
+import { FiDownload, FiArrowUpRight, FiGithub, FiMic } from "react-icons/fi";
+
 
 interface ProfileData {
   profile_name?: string;
@@ -29,10 +29,13 @@ interface Skill {
   name: string;
 }
 
-const openChat = () => window.dispatchEvent(new Event("open-chat"));
+// The hero CTA opens the voice UI; the terminal chip opens text chat.
+const openVoice = () =>
+  window.dispatchEvent(new CustomEvent("open-chat", { detail: { mode: "voice" } }));
 
+// Mirrors the profile_description site setting; only shown if that fetch fails.
 const DEFAULT_BIO =
-  "I build systems where software meets machine learning, maths and physics — from LLM agents in production to differentiable-physics research.";
+  "I build things that listen. LLM agents in production by day; by night, speech models from the ground up — VAD, ASR, TTS and the real-time pipeline between them, written in PyTorch rather than called over HTTP. Same instinct as my IIT Delhi thesis, which taught a cheap simulation to correct its own numerical error: open the box, learn every layer, then make it fast.";
 
 // Curated, hand-picked highlights — read like a git log of recent work.
 // Ordered as a narrative: production work, then from-scratch ML, then research.
@@ -141,13 +144,13 @@ export default function Home() {
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Button
-                onClick={openChat}
+                onClick={openVoice}
                 variant="cta"
                 size="lg"
                 className="w-full sm:w-auto"
               >
-                <HiSparkles className="text-base" />
-                chat with my AI
+                <FiMic className="text-base" />
+                talk to my AI
               </Button>
               <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
                 <Link href="/work">

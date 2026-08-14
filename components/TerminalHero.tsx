@@ -19,6 +19,28 @@ interface SocialLink {
   platform: string;
   url: string;
 }
+interface Post {
+  slug: string;
+  title: string;
+  summary: string | null;
+  tags: string[];
+  readingMinutes: number;
+  publishedAt: string | null;
+  views: number;
+  likes: number;
+}
+interface Experience {
+  id: string;
+  company: string;
+  position: string;
+  duration: string;
+  location: string;
+}
+interface GithubStats {
+  profile: { login: string; url: string };
+  stats: { publicRepos: number; totalStars: number; followers: number };
+  pinned: { name: string; language: string | null; stars: number; url: string }[];
+}
 
 interface TerminalHeroProps {
   name: string;
@@ -38,23 +60,117 @@ const INTERESTS = [
   "physics",
 ];
 
+/** What I'm actually doing at the moment — the "now page" convention. */
+const NOW = [
+  "Building LLM agents that triage and root-cause production support issues.",
+  "Training speech models from scratch — currently a streaming Conformer.",
+  "Reading about multimodal grounding, and how systems fail across modalities.",
+  "Running Whisper and a 9B model entirely on-device, because it's finally viable.",
+];
+
+const HELP_GROUPS: [string, [string, string][]][] = [
+  [
+    "about",
+    [
+      ["whoami", "who is this"],
+      ["now", "what I'm doing lately"],
+      ["interests", "what I read for fun"],
+      ["neofetch", "the whole picture, fast"],
+    ],
+  ],
+  [
+    "work",
+    [
+      ["ls / work", "projects I've shipped"],
+      ["exp", "roles and companies"],
+      ["gh", "live GitHub stats"],
+      ["skills", "the toolkit"],
+    ],
+  ],
+  [
+    "writing",
+    [
+      ["blog", "published posts"],
+      ["read 1", "open post number 1"],
+    ],
+  ],
+  [
+    "reach me",
+    [
+      ["contact", "the form"],
+      ["socials", "find me online"],
+      ["cv", "download the resume"],
+      ["voice", "talk to my AI out loud"],
+      ["chat <q>", "ask my AI in text"],
+    ],
+  ],
+];
+
+/** `man <cmd>` entries — one line each, for the non-obvious commands. */
+const MANUAL: Record<string, string> = {
+  blog: "lists published posts newest-first, with reading time and likes. Use `read 1` to open one.",
+  read: "opens a post by its number from `blog` (e.g. `read 1`), or by slug.",
+  now: "a short list of what I'm actively working on and thinking about.",
+  neofetch: "system-info-style summary: role, project count, live repo stats, focus areas.",
+  gh: "live GitHub profile stats plus featured repositories, fetched at runtime.",
+  exp: "work history — role, company, dates, location.",
+  voice: "opens the voice assistant and starts listening. Pause to end your turn.",
+  chat: "opens the text assistant. `chat <question>` sends it immediately.",
+  cv: "downloads the current resume PDF.",
+  skills: "the technologies I actually use, pulled from the live site data.",
+  history: "the last dozen commands from this session.",
+  sudo: "no.",
+};
+
 const COMMANDS = [
   "help",
   "whoami",
+  "now",
+  "neofetch",
   "ls",
   "work",
   "skills",
   "interests",
+  "exp",
+  "experience",
+  "gh",
+  "github",
+  "blog",
+  "posts",
+  "read",
   "resume",
+  "cv",
   "contact",
   "socials",
+  "voice",
   "chat",
+  "man",
+  "history",
   "clear",
   "date",
   "pwd",
+  "echo",
   "sudo",
   "coffee",
+  "theme",
 ];
+
+/** Levenshtein, for "did you mean" on a typo. */
+function editDistance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return d[a.length][b.length];
+}
 
 function useTypewriter(words: string[], speed = 75, pause = 1500) {
   const [text, setText] = useState("");
@@ -104,6 +220,10 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
   const role = useTypewriter(ROLES);
   const [projects, setProjects] = useState<Project[]>([]);
   const [socials, setSocials] = useState<SocialLink[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [postsLoaded, setPostsLoaded] = useState(false);
+  const [experiences, setExperiences] = useState<Experience[]>([]);
+  const [github, setGithub] = useState<GithubStats | null>(null);
   const [history, setHistory] = useState<Entry[]>([]);
   const [input, setInput] = useState("");
   const [cmdLog, setCmdLog] = useState<string[]>([]);
@@ -121,6 +241,22 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
     fetch("/api/admin/social")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d?.socialLinks && setSocials(d.socialLinks))
+      .catch(() => {});
+    fetch("/api/blog")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.posts && setPosts(d.posts))
+      .catch(() => {})
+      // Tracked separately so `blog` can distinguish "still loading" from
+      // "nothing published" — otherwise a slow fetch looks like an empty blog.
+      .finally(() => setPostsLoaded(true));
+    fetch("/api/admin/experience")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.experiences && setExperiences(d.experiences))
+      .catch(() => {});
+    // GitHub is optional — the commands that use it degrade to a notice.
+    fetch("/api/github")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.profile && setGithub(d))
       .catch(() => {});
   }, []);
 
@@ -153,26 +289,259 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
 
     switch (name1) {
       case "help":
+      case "?":
         print(
           cmd,
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
-            {[
-              ["whoami", "who is this"],
-              ["ls / work", "my projects"],
-              ["skills", "my toolkit"],
-              ["interests", "what I love"],
-              ["resume", "experience"],
-              ["contact", "reach me"],
-              ["socials", "find me online"],
-              ["chat <q>", "ask my AI"],
-              ["clear", "reset screen"],
-            ].map(([c, d]) => (
-              <span key={c}>
-                <span className="text-accent">{c}</span>
-                <span className="text-faint"> — {d}</span>
+          <div className="space-y-2.5">
+            {HELP_GROUPS.map(([group, items]) => (
+              <div key={group}>
+                <p className="text-faint">{group}</p>
+                <div className="mt-0.5 grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
+                  {items.map(([c, d]) => (
+                    <span key={c}>
+                      <span className="text-accent">{c.padEnd(14, " ")}</span>
+                      <span className="text-faint">{d}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <p className="text-faint">
+              <span className="text-accent-dim">tip</span> ↑/↓ history · Tab completes ·
+              Ctrl+L clears · <span className="text-accent">man &lt;cmd&gt;</span> for detail
+            </p>
+          </div>
+        );
+        break;
+
+      case "man":
+        print(
+          cmd,
+          arg ? (
+            MANUAL[arg.toLowerCase()] ? (
+              <div>
+                <p className="text-ink">
+                  <span className="text-accent">{arg.toLowerCase()}</span> —{" "}
+                  {MANUAL[arg.toLowerCase()]}
+                </p>
+              </div>
+            ) : (
+              <span className="text-muted">
+                no manual entry for <span className="text-amber">{arg}</span>
               </span>
+            )
+          ) : (
+            <span className="text-muted">usage: man &lt;command&gt;</span>
+          )
+        );
+        break;
+
+      case "blog":
+      case "posts":
+      case "writing":
+        print(
+          cmd,
+          posts.length ? (
+            <div className="space-y-1">
+              {posts.map((p, i) => (
+                <div key={p.slug} className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-faint">{String(i + 1).padStart(2, "0")}</span>
+                  <button
+                    onClick={() => router.push(`/blog/${p.slug}`)}
+                    className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+                  >
+                    {p.title}
+                  </button>
+                  <span className="text-faint">
+                    · {p.readingMinutes} min · ♥ {p.likes}
+                  </span>
+                </div>
+              ))}
+              <p className="pt-0.5 text-faint">
+                <span className="text-accent-dim">#</span> read one with{" "}
+                <span className="text-accent">read {posts.length > 0 ? 1 : "n"}</span>, or{" "}
+                <button
+                  onClick={() => router.push("/blog")}
+                  className="text-accent-dim underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+                >
+                  cd ~/blog →
+                </button>
+              </p>
+            </div>
+          ) : postsLoaded ? (
+            <span className="text-muted">no posts published yet.</span>
+          ) : (
+            <span className="text-muted">loading posts… try again in a second.</span>
+          )
+        );
+        break;
+
+      case "read":
+      case "open": {
+        /*
+         * Tolerant of how the help text reads: `read <n>` invites typing the
+         * angle brackets, so strip everything that isn't a digit before
+         * parsing. Falls back to matching a slug.
+         */
+        const idx = parseInt(arg.replace(/[^0-9]/g, ""), 10);
+        const post =
+          posts[idx - 1] ??
+          posts.find(
+            (p) =>
+              p.slug === arg.toLowerCase().replace(/[<>]/g, "").trim().replace(/\s+/g, "-")
+          );
+        if (post) {
+          print(cmd, <span className="text-muted">opening “{post.title}” …</span>);
+          setTimeout(() => router.push(`/blog/${post.slug}`), 300);
+        } else {
+          print(
+            cmd,
+            <span className="text-muted">
+              usage: <span className="text-accent">read 1</span>
+              {posts.length
+                ? ` (1–${posts.length}) — run `
+                : !postsLoaded
+                  ? " — posts still loading, run "
+                  : " — run "}
+              <span className="text-accent">blog</span> for the list
+            </span>
+          );
+        }
+        break;
+      }
+
+      case "exp":
+      case "experience":
+      case "work-history":
+        print(
+          cmd,
+          experiences.length ? (
+            <div className="space-y-1">
+              {experiences.map((e) => (
+                <div key={e.id} className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-accent">▸ {e.position}</span>
+                  <span className="text-ink">@ {e.company}</span>
+                  <span className="text-faint">
+                    — {e.duration}
+                    {e.location ? ` · ${e.location}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted">loading experience…</span>
+          )
+        );
+        break;
+
+      case "gh":
+      case "github":
+        print(
+          cmd,
+          github ? (
+            <div className="space-y-1">
+              <p className="text-ink">
+                <OutLink href={github.profile.url}>@{github.profile.login}</OutLink>{" "}
+                <span className="text-faint">
+                  — {github.stats.publicRepos} repos · ★ {github.stats.totalStars} ·{" "}
+                  {github.stats.followers} followers
+                </span>
+              </p>
+              {github.pinned.slice(0, 6).map((r) => (
+                <div key={r.name} className="flex flex-wrap items-baseline gap-x-2">
+                  <OutLink href={r.url}>{r.name}</OutLink>
+                  <span className="text-faint">
+                    {r.language ?? "—"} · ★ {r.stars}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted">github data unavailable right now.</span>
+          )
+        );
+        break;
+
+      case "now":
+        print(
+          cmd,
+          <div className="space-y-0.5">
+            {NOW.map((n) => (
+              <p key={n}>
+                <span className="text-accent-dim">▹</span>{" "}
+                <span className="text-ink">{n}</span>
+              </p>
             ))}
           </div>
+        );
+        break;
+
+      case "voice":
+      case "talk":
+        print(
+          cmd,
+          <span className="text-muted">opening the voice assistant — just start talking.</span>
+        );
+        window.dispatchEvent(
+          new CustomEvent("open-chat", { detail: { mode: "voice" } })
+        );
+        break;
+
+      case "neofetch":
+      case "about-system":
+        print(
+          cmd,
+          <div className="flex flex-wrap gap-x-6 gap-y-1">
+            <pre className="text-accent-dim leading-[1.15]">{`   .-.
+  |o o|
+  | ^ |
+  |'-'|
+   '-'`}</pre>
+            <div className="space-y-0.5">
+              {[
+                ["user", "jai@shankar"],
+                ["role", ROLES[0]],
+                ["shell", "portfolio-zsh"],
+                ["uptime", `${experiences.length || "—"} roles shipped`],
+                ["projects", `${projects.length || "—"}`],
+                ["posts", `${posts.length || "—"}`],
+                [
+                  "repos",
+                  github ? `${github.stats.publicRepos} · ★ ${github.stats.totalStars}` : "—",
+                ],
+                ["focus", "voice AI · LLM agents · speech models"],
+                ["theme", "gold on blue-black"],
+              ].map(([k, v]) => (
+                <p key={k}>
+                  <span className="text-accent">{k.padEnd(10, " ")}</span>
+                  <span className="text-ink">{v}</span>
+                </p>
+              ))}
+            </div>
+          </div>
+        );
+        break;
+
+      case "history":
+        print(
+          cmd,
+          cmdLog.length ? (
+            <div className="space-y-0.5">
+              {cmdLog.slice(-12).map((c, i) => (
+                <p key={i}>
+                  <span className="text-faint">
+                    {String(cmdLog.length - Math.min(12, cmdLog.length) + i + 1).padStart(
+                      3,
+                      " "
+                    )}
+                  </span>{" "}
+                  <span className="text-muted">{c}</span>
+                </p>
+              ))}
+            </div>
+          ) : (
+            <span className="text-muted">no history yet.</span>
+          )
         );
         break;
 
@@ -290,10 +659,14 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
       case "ai":
         if (arg) {
           print(cmd, <span className="text-muted">→ asking my AI: “{arg}”</span>);
-          window.dispatchEvent(new CustomEvent("open-chat", { detail: { message: arg } }));
+          window.dispatchEvent(
+            new CustomEvent("open-chat", { detail: { message: arg, mode: "text" } })
+          );
         } else {
           print(cmd, <span className="text-muted">launching assistant… (or type: chat &lt;your question&gt;)</span>);
-          window.dispatchEvent(new Event("open-chat"));
+          window.dispatchEvent(
+            new CustomEvent("open-chat", { detail: { mode: "text" } })
+          );
         }
         break;
 
@@ -322,17 +695,41 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
         break;
 
       case "theme":
-        print(cmd, <span className="text-muted">one theme here: phosphor green on black.</span>);
+        print(cmd, <span className="text-muted">one theme here: warm gold on blue-black.</span>);
         break;
 
-      default:
+      default: {
+        // Offer the nearest command rather than a flat "not found".
+        const near = COMMANDS.map((c) => [c, editDistance(name1, c)] as const)
+          .filter(([, d]) => d <= 2)
+          .sort((a, b) => a[1] - b[1])[0]?.[0];
         print(
           cmd,
           <span className="text-muted">
-            command not found: <span className="text-amber">{name1}</span> — type{" "}
-            <span className="text-accent">help</span>
+            command not found: <span className="text-amber">{name1}</span>
+            {near ? (
+              <>
+                {" — did you mean "}
+                <button
+                  onClick={() => {
+                    run(near);
+                    inputRef.current?.focus();
+                  }}
+                  className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+                >
+                  {near}
+                </button>
+                {"?"}
+              </>
+            ) : (
+              <>
+                {" — type "}
+                <span className="text-accent">help</span>
+              </>
+            )}
           </span>
         );
+      }
     }
   };
 
@@ -359,12 +756,46 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
       }
     } else if (e.key === "Tab") {
       e.preventDefault();
-      const match = COMMANDS.find((c) => c.startsWith(input.toLowerCase()) && input);
-      if (match) setInput(match);
+      if (!input) return;
+      const matches = COMMANDS.filter((c) => c.startsWith(input.toLowerCase()));
+      if (matches.length === 1) {
+        setInput(matches[0]);
+      } else if (matches.length > 1) {
+        // Complete as far as the shared prefix goes, then show the options —
+        // which is what a real shell does, rather than silently picking one.
+        let prefix = matches[0];
+        for (const m of matches) {
+          while (!m.startsWith(prefix)) prefix = prefix.slice(0, -1);
+        }
+        if (prefix.length > input.length) setInput(prefix);
+        else
+          print(
+            input,
+            <p className="flex flex-wrap gap-x-3">
+              {matches.map((m) => (
+                <span key={m} className="text-accent">
+                  {m}
+                </span>
+              ))}
+            </p>
+          );
+      }
+    } else if (e.key === "l" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      setHistory([]);
+    } else if (e.key === "c" && e.ctrlKey) {
+      e.preventDefault();
+      print(`${input}^C`, null);
+      setInput("");
+      setLogIdx(null);
     }
   };
 
-  const suggestions = useMemo(() => ["help", "ls", "skills", "chat with my AI →"], []);
+  // The terminal is the text-chat entry point; the floating mic owns voice.
+  const suggestions = useMemo(
+    () => ["help", "neofetch", "blog", "now", "text chat →"],
+    []
+  );
 
   return (
     <div className="term w-full">
@@ -450,13 +881,15 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
       {/* suggestion chips */}
       <div className="flex flex-wrap gap-2 border-t border-line bg-surface-2/40 px-6 py-3">
         {suggestions.map((s) => {
-          const isChat = s.startsWith("chat");
+          const isChat = s.startsWith("text chat");
           return (
             <button
               key={s}
               onClick={() => {
                 if (isChat) {
-                  window.dispatchEvent(new Event("open-chat"));
+                  window.dispatchEvent(
+                    new CustomEvent("open-chat", { detail: { mode: "text" } })
+                  );
                 } else {
                   run(s);
                   inputRef.current?.focus();

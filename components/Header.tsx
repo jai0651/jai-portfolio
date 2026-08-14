@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import Nav from "./Nav";
@@ -8,6 +9,10 @@ import MobileNav from "./MobileNav";
 
 const Header = () => {
   const [scrolled, setScrolled] = useState(false);
+  const pathname = usePathname();
+  // Contact isn't in the nav, so the CTA carries its own active state —
+  // otherwise being on /contact shows no indicator anywhere.
+  const onContact = pathname === "/contact";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -56,8 +61,10 @@ const Header = () => {
             <div className="hidden items-center gap-5 xl:flex">
               <Nav />
               <span className="h-5 w-px bg-line" />
-              <Button asChild size="sm">
-                <Link href="/contact">./contact</Link>
+              <Button asChild size="sm" variant={onContact ? "outline" : "default"}>
+                <Link href="/contact" aria-current={onContact ? "page" : undefined}>
+                  ./contact
+                </Link>
               </Button>
             </div>
 

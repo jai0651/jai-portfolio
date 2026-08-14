@@ -4,12 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 
+/*
+ * Contact is deliberately absent: it lives in the header as the single gold
+ * CTA. Listing it here as well put "~/contact" and "./contact" side by side,
+ * which read as a duplicate. Nav is for browsing; the button is the action.
+ *
+ * MobileNav keeps its own contact entry, because there's no CTA button there.
+ */
 const links = [
   { label: "~", path: "/" },
   { label: "~/work", path: "/work" },
   { label: "~/blog", path: "/blog" },
   { label: "~/resume", path: "/resume" },
-  { label: "~/contact", path: "/contact" },
 ];
 
 const Nav = () => {

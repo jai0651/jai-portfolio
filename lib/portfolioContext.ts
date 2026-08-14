@@ -29,6 +29,7 @@ export async function getPortfolioContext(): Promise<PortfolioContext> {
     achievements,
     services,
     socials,
+    posts,
   ] = await Promise.all([
     prisma.siteContent.findMany(),
     prisma.experience.findMany({ orderBy: { order: "asc" } }),
@@ -41,6 +42,11 @@ export async function getPortfolioContext(): Promise<PortfolioContext> {
     }),
     prisma.service.findMany({ orderBy: { order: "asc" } }),
     prisma.socialLink.findMany({ where: { isActive: true } }),
+    prisma.blogPost.findMany({
+      where: { published: true },
+      select: { title: true, slug: true, summary: true, tags: true, html: true },
+      orderBy: { publishedAt: "desc" },
+    }),
   ]);
 
   const settings: Record<string, string> = {};
@@ -133,6 +139,32 @@ export async function getPortfolioContext(): Promise<PortfolioContext> {
     lines.push(`\n# Social & professional links`);
     socials.forEach((s) => {
       lines.push(`- ${s.platform}: ${s.url}`);
+    });
+  }
+
+  /*
+   * Published writing. This is where the deep technical detail lives — the
+   * DB's Project rows are one-liners, whereas a post explains the actual
+   * engineering. Without this the assistant couldn't discuss the voice-agent
+   * or protocol work at all, because none of it exists as a Project row.
+   *
+   * Each post contributes its summary plus a trimmed slice of body text; the
+   * cap keeps a long post from crowding out the rest of the knowledge base.
+   */
+  if (posts.length) {
+    lines.push(`\n# Writing (published technical posts)`);
+    posts.forEach((p) => {
+      const body = p.html
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&[a-z]+;/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 1800);
+      lines.push(
+        `\n## ${p.title} (/blog/${p.slug})${p.tags ? ` — tags: ${p.tags}` : ""}`
+      );
+      if (p.summary) lines.push(p.summary);
+      if (body) lines.push(body);
     });
   }
 

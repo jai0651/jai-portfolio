@@ -103,15 +103,32 @@ const Work = () => {
                   className="card card-lift group flex flex-col overflow-hidden"
                 >
                   <div className="relative aspect-[16/10] overflow-hidden bg-surface-2">
-                    <Image
-                      src={project.image || "/assets/work/thumb1.png"}
-                      fill
-                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                      className="thumb-duotone object-cover object-top transition-all duration-500 ease-out-quint"
-                      alt={project.title}
-                    />
-                    {/* green wash + readability gradient (hover-capable only) */}
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent opacity-0 transition-opacity duration-500 [@media(hover:hover)]:opacity-100 [@media(hover:hover)]:group-hover:opacity-0" />
+                    {project.image ? (
+                      <>
+                        <Image
+                          src={project.image}
+                          fill
+                          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                          className="thumb-duotone object-cover object-top transition-all duration-500 ease-out-quint"
+                          alt={project.title}
+                        />
+                        {/* accent wash + readability gradient (hover-capable only) */}
+                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-accent/10 to-transparent opacity-0 transition-opacity duration-500 [@media(hover:hover)]:opacity-100 [@media(hover:hover)]:group-hover:opacity-0" />
+                      </>
+                    ) : (
+                      /*
+                       * Research and CLI projects have no UI to screenshot, and
+                       * a stock thumbnail reads as filler. A blueprint panel
+                       * with the project number is deliberate instead of empty,
+                       * and it means a project never needs an asset to ship.
+                       */
+                      <div className="grid-bg absolute inset-0 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-[radial-gradient(62%_62%_at_50%_38%,rgba(240,180,41,0.11),transparent_72%)]" />
+                        <span className="text-outline group-hover:text-outline-hover relative font-mono text-[68px] font-bold leading-none text-transparent transition-all duration-500 ease-out-quint">
+                          {project.num}
+                        </span>
+                      </div>
+                    )}
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface via-surface/25 to-transparent" />
 
                     {/* filename tag */}

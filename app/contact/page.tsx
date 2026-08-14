@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { FaEnvelope, FaMapMarkerAlt } from "react-icons/fa";
 import { HiSparkles } from "react-icons/hi2";
+import { FiMic } from "react-icons/fi";
 import { motion } from "framer-motion";
 import Section from "@/components/Section";
 import { fadeUpNow, lead } from "@/lib/motion";
@@ -224,9 +225,13 @@ const Contact = () => {
                 variant="outline"
                 size="sm"
                 className="mt-4"
-                onClick={() => window.dispatchEvent(new Event("open-chat"))}
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("open-chat", { detail: { mode: "voice" } })
+                  )
+                }
               >
-                <HiSparkles /> chat with my AI
+                <FiMic /> talk to my AI
               </Button>
             </div>
           </div>

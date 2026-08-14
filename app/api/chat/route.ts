@@ -13,11 +13,63 @@ const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const MAX_MODELS_TO_TRY = 6;
 const RATE_LIMIT_RETRY_MS = 2500;
 
-// Prefer the user's own OpenAI key (reliable, no shared rate limits); fall
-// back to OpenRouter free models if only that key is configured.
-const USE_OPENAI = Boolean(process.env.OPENAI_API_KEY);
-const API_URL = USE_OPENAI ? OPENAI_URL : OPENROUTER_URL;
-const API_KEY = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY;
+/*
+ * Provider selection, with the other provider as a fallback.
+ *
+ * AI_PROVIDER=openai|openrouter sets the preference, so both keys can live in
+ * .env and you switch by changing one variable instead of deleting a key. Any
+ * provider that has a key is kept in the chain — whichever isn't preferred
+ * becomes the safety net, which matters because OpenRouter's free tier can be
+ * rate-limited or simply unavailable.
+ */
+type ProviderName = "openai" | "openrouter";
+
+const PROVIDER_OVERRIDE = process.env.AI_PROVIDER?.trim().toLowerCase();
+const HAS_OPENAI = Boolean(process.env.OPENAI_API_KEY);
+const HAS_OPENROUTER = Boolean(process.env.OPENROUTER_API_KEY);
+
+const PROVIDER_ORDER: ProviderName[] = (() => {
+  const preferred: ProviderName =
+    PROVIDER_OVERRIDE === "openrouter" ? "openrouter" : "openai";
+  const other: ProviderName =
+    preferred === "openai" ? "openrouter" : "openai";
+  const has = (p: ProviderName) => (p === "openai" ? HAS_OPENAI : HAS_OPENROUTER);
+  return ([preferred, other] as ProviderName[]).filter(has);
+})();
+
+const urlFor = (p: ProviderName) => (p === "openai" ? OPENAI_URL : OPENROUTER_URL);
+const keyFor = (p: ProviderName) =>
+  p === "openai" ? process.env.OPENAI_API_KEY : process.env.OPENROUTER_API_KEY;
+
+/*
+ * Sampling defaults, and the escalating fallbacks used when a model rejects
+ * them. Newer OpenAI models (gpt-5.6-luna, gpt-5-mini) refuse a custom
+ * `temperature` and require `max_completion_tokens` instead of `max_tokens`;
+ * across OpenRouter's several hundred models the support matrix is uneven
+ * enough that probing beats maintaining a list.
+ */
+const TEMPERATURE = 0.4;
+const MAX_OUTPUT_TOKENS = 600;
+
+type ParamMode = 0 | 1 | 2;
+
+function samplingParams(mode: ParamMode): Record<string, unknown> {
+  if (mode === 0) return { temperature: TEMPERATURE, max_tokens: MAX_OUTPUT_TOKENS };
+  // Drop the custom temperature, switch to the newer token cap.
+  if (mode === 1) return { max_completion_tokens: MAX_OUTPUT_TOKENS };
+  // Last resort: let the model use all its own defaults.
+  return {};
+}
+
+/** Does this 400 look like "you sent a parameter I don't accept"? */
+function isParamRejection(status: number, detail: string): boolean {
+  return (
+    status === 400 &&
+    /unsupported (parameter|value)|max_tokens|max_completion_tokens|temperature|not supported/i.test(
+      detail
+    )
+  );
+}
 
 interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -36,8 +88,7 @@ function extractErrorMessage(detail: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = API_KEY;
-  if (!apiKey) {
+  if (PROVIDER_ORDER.length === 0) {
     return new Response(
       JSON.stringify({
         error:
@@ -87,93 +138,132 @@ ${knowledge}
     ...recent,
   ];
 
-  // Build the candidate list: configured model first, then live free models
-  // discovered from OpenRouter (avoids retired/renamed slugs).
-  // With OpenAI we use a single reliable model. With OpenRouter we try the
-  // configured model first, then live-discovered free models.
-  const candidates = USE_OPENAI
-    ? [process.env.OPENAI_MODEL || "gpt-4o-mini"]
-    : Array.from(
-        new Set(
-          [process.env.OPENROUTER_MODEL, ...(await getFreeModels(apiKey))].filter(
-            (m): m is string => Boolean(m)
-          )
-        )
-      ).slice(0, MAX_MODELS_TO_TRY);
-
-  let upstream: Response | null = null;
   let lastStatus = 0;
   let lastDetail = "";
-  let authBlocked = false;
+  // Auth failures are tracked per provider so a bad OpenRouter key doesn't
+  // stop us reaching OpenAI.
+  const authBlocked = new Set<ProviderName>();
 
-  const attempt = async (model: string): Promise<Response | null> => {
-    try {
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      };
-      // OpenRouter-specific attribution headers (ignored by OpenAI).
-      if (!USE_OPENAI) {
-        headers["HTTP-Referer"] =
-          process.env.NEXTAUTH_URL || "https://jai-portfolio.local";
-        headers["X-Title"] = `${name} Portfolio Assistant`;
+  /** Models to try for a provider, best-first. */
+  const candidatesFor = async (p: ProviderName): Promise<string[]> => {
+    if (p === "openai") return [process.env.OPENAI_MODEL || "gpt-4o-mini"];
+    // Configured model first, then live-discovered free models — avoids
+    // retired or renamed slugs.
+    return Array.from(
+      new Set(
+        [
+          process.env.OPENROUTER_MODEL,
+          ...(await getFreeModels(process.env.OPENROUTER_API_KEY!)),
+        ].filter((m): m is string => Boolean(m))
+      )
+    ).slice(0, MAX_MODELS_TO_TRY);
+  };
+
+  const attempt = async (
+    p: ProviderName,
+    model: string
+  ): Promise<Response | null> => {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${keyFor(p)}`,
+      "Content-Type": "application/json",
+    };
+    // OpenRouter-specific attribution headers (ignored by OpenAI).
+    if (p === "openrouter") {
+      headers["HTTP-Referer"] =
+        process.env.NEXTAUTH_URL || "https://jai-portfolio.local";
+      headers["X-Title"] = `${name} Portfolio Assistant`;
+    }
+
+    // Walk the sampling modes down until the model stops complaining.
+    for (const mode of [0, 1, 2] as ParamMode[]) {
+      try {
+        const res = await fetch(urlFor(p), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model,
+            messages,
+            stream: true,
+            ...samplingParams(mode),
+          }),
+        });
+
+        if (res.ok && res.body) return res;
+
+        lastStatus = res.status;
+        lastDetail = await res.text().catch(() => "");
+
+        if (isParamRejection(res.status, lastDetail) && mode < 2) {
+          console.warn(
+            `[chat] ${p} "${model}" rejected sampling mode ${mode}; retrying with a reduced parameter set.`
+          );
+          continue;
+        }
+
+        console.error(
+          `[chat] ${p} ${res.status} for model "${model}": ${lastDetail.slice(0, 300)}`
+        );
+        if (res.status === 401 || res.status === 403) authBlocked.add(p);
+        return null;
+      } catch (e) {
+        lastDetail = e instanceof Error ? e.message : "network error";
+        console.error(`[chat] ${p} fetch failed for "${model}": ${lastDetail}`);
+        return null;
       }
-
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          temperature: 0.4,
-          max_tokens: 600,
-        }),
-      });
-
-      if (res.ok && res.body) return res;
-
-      lastStatus = res.status;
-      lastDetail = await res.text().catch(() => "");
-      console.error(
-        `[chat] ${USE_OPENAI ? "OpenAI" : "OpenRouter"} ${res.status} for model "${model}": ${lastDetail.slice(0, 300)}`
-      );
-      if (res.status === 401 || res.status === 403) authBlocked = true;
-    } catch (e) {
-      lastDetail = e instanceof Error ? e.message : "network error";
-      console.error(`[chat] fetch failed for model "${model}": ${lastDetail}`);
     }
     return null;
   };
 
-  // Pass 1: try each candidate once.
-  for (const model of candidates) {
-    upstream = await attempt(model);
-    if (upstream) break;
-    if (authBlocked) break;
-  }
-
-  // Pass 2: if everything was just rate-limited (429), wait briefly and retry.
-  if (!upstream && !authBlocked && lastStatus === 429) {
-    await sleep(RATE_LIMIT_RETRY_MS);
-    for (const model of candidates) {
-      upstream = await attempt(model);
-      if (upstream) break;
+  /*
+   * Try the preferred provider's models, then fall through to the other one.
+   * A provider can fail wholesale — rate limits, an outage, a rejected key,
+   * a free tier that quietly stops answering — and the visitor shouldn't see
+   * any of that as long as the other provider is configured.
+   */
+  const runProviders = async (): Promise<Response | null> => {
+    for (const p of PROVIDER_ORDER) {
+      if (authBlocked.has(p)) continue;
+      const models = await candidatesFor(p).catch(() => []);
+      for (const model of models) {
+        const res = await attempt(p, model);
+        if (res) return res;
+        if (authBlocked.has(p)) break; // whole provider is unusable
+      }
+      if (PROVIDER_ORDER.length > 1) {
+        console.warn(`[chat] ${p} exhausted; falling through to the next provider.`);
+      }
     }
+    return null;
+  };
+
+  let upstream = await runProviders();
+
+  // If everything was merely rate-limited, wait briefly and make one more pass.
+  if (!upstream && lastStatus === 429) {
+    await sleep(RATE_LIMIT_RETRY_MS);
+    upstream = await runProviders();
   }
 
   if (!upstream || !upstream.body) {
     const apiMessage = extractErrorMessage(lastDetail);
     const rateLimited = lastStatus === 429;
+    // Only reached once EVERY configured provider has failed.
+    const allAuthBlocked = PROVIDER_ORDER.every((p) => authBlocked.has(p));
     let error: string;
-    if (authBlocked) {
-      error = USE_OPENAI
-        ? "The OpenAI API key was rejected. Check OPENAI_API_KEY is valid and has billing/credits enabled."
-        : "The OpenRouter API key was rejected. Double-check OPENROUTER_API_KEY is valid and active.";
+    if (allAuthBlocked) {
+      error =
+        PROVIDER_ORDER.length > 1
+          ? "Both AI provider keys were rejected. Check OPENAI_API_KEY and OPENROUTER_API_KEY are valid and funded."
+          : PROVIDER_ORDER[0] === "openai"
+            ? "The OpenAI API key was rejected. Check OPENAI_API_KEY is valid and has billing/credits enabled."
+            : "The OpenRouter API key was rejected. Double-check OPENROUTER_API_KEY is valid and active.";
     } else if (rateLimited) {
-      error = USE_OPENAI
-        ? "OpenAI is rate-limiting requests (check your usage limits/quota). Please try again shortly."
-        : "The free AI models are busy right now (rate-limited). Please try again in a few seconds — or add a small credit to your OpenRouter account for higher limits.";
+      error =
+        PROVIDER_ORDER.length > 1
+          ? "Every configured AI provider is rate-limiting right now. Please try again in a few seconds."
+          : PROVIDER_ORDER[0] === "openai"
+            ? "OpenAI is rate-limiting requests (check your usage limits/quota). Please try again shortly."
+            : "The free AI models are busy right now (rate-limited). Please try again in a few seconds — or add a small credit to your OpenRouter account for higher limits.";
     } else if (/data policy|no endpoints|privacy/i.test(apiMessage)) {
       error =
         "OpenRouter blocked the free models for this account. Enable free/logged models at openrouter.ai/settings/privacy, then try again.";
@@ -188,13 +278,15 @@ ${knowledge}
     });
   }
 
-  // Transform OpenRouter SSE stream into a plain-text token stream.
+  // Transform the provider's SSE stream into a plain-text token stream.
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
+  // Captured so the stream closure has a non-null binding to read from.
+  const upstreamBody = upstream.body;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const reader = upstream.body!.getReader();
+      const reader = upstreamBody.getReader();
       let buffer = "";
       try {
         while (true) {
