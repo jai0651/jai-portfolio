@@ -20,6 +20,7 @@ import {
   FaCog,
   FaSignOutAlt,
   FaExternalLinkAlt,
+  FaFileCode,
 } from "react-icons/fa";
 import { HiBars3, HiXMark } from "react-icons/hi2";
 
@@ -28,6 +29,7 @@ const nav = [
   { label: "Visitors", href: "/admin/visitors", icon: <FaEye /> },
   { label: "Messages", href: "/admin/messages", icon: <FaEnvelope /> },
   { label: "Media", href: "/admin/media", icon: <FaImages /> },
+  { label: "Blog", href: "/admin/blog", icon: <FaFileCode /> },
   { label: "Services", href: "/admin/services", icon: <FaBriefcase /> },
   { label: "Experience", href: "/admin/experience", icon: <FaCode /> },
   { label: "Education", href: "/admin/education", icon: <FaGraduationCap /> },

@@ -1,9 +1,13 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { FiArrowUpRight } from "react-icons/fi";
+import { FiArrowUpRight, FiEye, FiHeart } from "react-icons/fi";
 import Section from "@/components/Section";
 import SectionHeader from "@/components/SectionHeader";
-import { formatDate, getAllPosts } from "@/lib/blog";
+import { formatDate, getPublishedPosts, type SortMode } from "@/lib/blog";
+
+// Posts are uploaded at runtime from the admin UI, so this can't be baked at
+// build time. Short revalidate keeps it cheap while staying near-live.
+export const revalidate = 30;
 
 export const metadata: Metadata = {
   title: "Blog — Jai Shankar",
@@ -11,14 +15,20 @@ export const metadata: Metadata = {
     "Technical writeups on voice AI, speech models, LLM agents and the systems underneath them.",
 };
 
-export default function BlogIndex() {
-  const posts = getAllPosts();
+interface Props {
+  searchParams: Promise<{ sort?: string }>;
+}
+
+export default async function BlogIndex({ searchParams }: Props) {
+  const { sort } = await searchParams;
+  const mode: SortMode = sort === "popular" ? "popular" : "recent";
+  const posts = await getPublishedPosts(mode);
 
   return (
     <Section space="md">
       <SectionHeader
         as="h1"
-        cmd="ls ~/blog"
+        cmd={`ls ~/blog ${mode === "popular" ? "--sort=likes" : "--sort=date"}`}
         title={
           <>
             Things I&apos;ve <span className="gradient-text">written down</span>
@@ -26,11 +36,28 @@ export default function BlogIndex() {
         }
         sub="Deep dives on voice AI, speech models built from scratch, and the protocol plumbing underneath them."
         meta={
-          posts.length > 0 && (
-            <span className="chip tnum">
-              <span className="text-accent">{posts.length}</span>{" "}
-              {posts.length === 1 ? "post" : "posts"}
-            </span>
+          posts.length > 1 && (
+            <div className="flex items-center gap-1 rounded-lg border border-line bg-surface-2/60 p-1 font-mono text-xs shadow-e1">
+              {(
+                [
+                  ["recent", "recent"],
+                  ["popular", "popular"],
+                ] as const
+              ).map(([value, label]) => (
+                <Link
+                  key={value}
+                  href={value === "recent" ? "/blog" : "/blog?sort=popular"}
+                  aria-current={mode === value ? "true" : undefined}
+                  className={`rounded-md px-3 py-1.5 transition-colors ${
+                    mode === value
+                      ? "bg-surface text-accent shadow-e1"
+                      : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
           )
         }
       />
@@ -45,7 +72,7 @@ export default function BlogIndex() {
             <li key={post.slug}>
               <Link
                 href={`/blog/${post.slug}`}
-                className="card card-lift group flex flex-col gap-3 p-6 sm:flex-row sm:items-start sm:gap-6"
+                className="card card-lift group flex flex-col gap-4 p-6 sm:flex-row sm:items-start sm:gap-6"
               >
                 <div className="min-w-0 flex-1">
                   <h2 className="h3 flex items-start gap-2 text-ink transition-colors group-hover:text-accent">
@@ -71,8 +98,20 @@ export default function BlogIndex() {
                 </div>
 
                 <div className="tnum shrink-0 font-mono text-xs text-faint sm:text-right">
-                  {post.date && <p>{formatDate(post.date)}</p>}
+                  {post.publishedAt && <p>{formatDate(post.publishedAt)}</p>}
                   <p className="mt-0.5">{post.readingMinutes} min read</p>
+                  <p className="mt-2 flex items-center gap-3 sm:justify-end">
+                    <span className="flex items-center gap-1">
+                      <FiEye /> {post.views}
+                    </span>
+                    <span
+                      className={`flex items-center gap-1 ${
+                        post.likes > 0 ? "text-accent-dim" : ""
+                      }`}
+                    >
+                      <FiHeart /> {post.likes}
+                    </span>
+                  </p>
                 </div>
               </Link>
             </li>

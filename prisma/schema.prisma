@@ -124,17 +124,17 @@ model ContactMessage {
 }
 
 model Achievement {
-  id              String   @id @default(cuid())
-  title           String
-  description     String?
-  date            String?
-  issuer          String?
-  proofUrl        String?
-  certificateUrl  String?
-  order           Int      @default(0)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  date           String?
+  issuer         String?
+  proofUrl       String?
+  certificateUrl String?
+  order          Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Resume {
@@ -157,4 +157,48 @@ model Media {
   size      Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ── Blog ──────────────────────────────────────────────────────────────
+// Posts are uploaded as self-contained .html files from the admin UI, then
+// parsed and sanitized before storage. The body is kept in Postgres rather
+// than fetched from blob on every render; the raw upload is kept in blob so a
+// post can be re-parsed if the pipeline changes.
+model BlogPost {
+  id             String    @id @default(cuid())
+  slug           String    @unique
+  title          String
+  summary        String?   @db.Text
+  html           String    @db.Text
+  tags           String    @default("") // comma-separated, as elsewhere
+  readingMinutes Int       @default(1)
+  published      Boolean   @default(false)
+  publishedAt    DateTime?
+  views          Int       @default(0)
+  likes          Int       @default(0) // denormalized counter for sorting
+  sourceName     String? // original filename, shown in admin
+  sourceUrl      String? // blob URL of the raw upload
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  likeRecords BlogLike[]
+
+  @@index([published, publishedAt])
+  @@index([published, views])
+  @@index([published, likes])
+}
+
+// One row per (post, visitor) so a like can be toggled and counted once.
+// visitorId is a salted hash of ip + user-agent — enough to dedupe without
+// storing anything identifying.
+model BlogLike {
+  id        String   @id @default(cuid())
+  postId    String
+  visitorId String
+  createdAt DateTime @default(now())
+
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, visitorId])
+  @@index([postId])
 }

@@ -1,41 +1,40 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { FiArrowLeft, FiArrowRight } from "react-icons/fi";
+import { FiArrowLeft, FiArrowRight, FiEye } from "react-icons/fi";
 import Section from "@/components/Section";
-import { formatDate, getAllPosts, getPost } from "@/lib/blog";
+import LikeButton from "@/components/blog/LikeButton";
+import ViewTracker from "@/components/blog/ViewTracker";
+import { formatDate, getAdjacentPosts, getPostBySlug } from "@/lib/blog";
+
+// Uploaded at runtime, so rendered per request rather than prerendered.
+export const revalidate = 30;
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export function generateStaticParams() {
-  return getAllPosts().map((p) => ({ slug: p.slug }));
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const post = getPost(slug);
+  const post = await getPostBySlug(slug);
   if (!post) return {};
   return {
     title: `${post.title} — Jai Shankar`,
-    description: post.summary,
+    description: post.summary ?? undefined,
   };
 }
 
-export default async function BlogPost({ params }: Props) {
+export default async function BlogPostPage({ params }: Props) {
   const { slug } = await params;
-  const post = getPost(slug);
+  const post = await getPostBySlug(slug);
   if (!post) notFound();
 
-  // Prev/next in the same reverse-chronological order as the index.
-  const all = getAllPosts();
-  const i = all.findIndex((p) => p.slug === post.slug);
-  const newer = i > 0 ? all[i - 1] : null;
-  const older = i >= 0 && i < all.length - 1 ? all[i + 1] : null;
+  const { newer, older } = await getAdjacentPosts(slug);
 
   return (
     <>
+      <ViewTracker slug={slug} />
+
       <Section tone="hero" space="md" innerClassName="max-w-[860px]">
         <Link
           href="/blog"
@@ -51,9 +50,13 @@ export default async function BlogPost({ params }: Props) {
         )}
 
         <div className="tnum mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-5 font-mono text-xs text-faint">
-          {post.date && <span>{formatDate(post.date)}</span>}
+          {post.publishedAt && <span>{formatDate(post.publishedAt)}</span>}
           <span className="text-line-2">·</span>
           <span>{post.readingMinutes} min read</span>
+          <span className="text-line-2">·</span>
+          <span className="flex items-center gap-1">
+            <FiEye /> {post.views}
+          </span>
           {post.tags.length > 0 && (
             <>
               <span className="text-line-2">·</span>
@@ -70,14 +73,28 @@ export default async function BlogPost({ params }: Props) {
       </Section>
 
       <Section space="none" innerClassName="max-w-[860px]" className="pb-20">
-        {/* First-party content committed to this repo — see lib/blog.ts. */}
+        {/*
+          Sanitized on upload by lib/blogHtml.ts — an allowlist covering
+          exactly the vocabulary .tech-article styles, with script/iframe and
+          all event handlers stripped.
+        */}
         <article
           className="tech-article"
           dangerouslySetInnerHTML={{ __html: post.html }}
         />
 
+        <div className="mt-14 flex flex-col items-start gap-4 border-t border-line pt-8 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-mono text-sm text-ink">Found this useful?</p>
+            <p className="mt-0.5 text-[15px] text-muted">
+              No sign-in — one like per reader, and you can take it back.
+            </p>
+          </div>
+          <LikeButton slug={slug} initialLikes={post.likes} />
+        </div>
+
         {(newer || older) && (
-          <nav className="mt-16 grid grid-cols-1 gap-3 border-t border-line pt-8 sm:grid-cols-2">
+          <nav className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {older ? (
               <Link href={`/blog/${older.slug}`} className="card card-lift group p-5">
                 <span className="flex items-center gap-2 font-mono text-xs text-faint">

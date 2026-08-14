@@ -26,6 +26,13 @@ export interface GithubProfile {
 export interface GithubData {
   profile: GithubProfile;
   repos: GithubRepo[];
+  /**
+   * The handful to feature. Genuinely pinned repos when a GITHUB_TOKEN is
+   * available, otherwise the top-starred ones — GitHub only exposes pins
+   * through the GraphQL API, which refuses anonymous requests.
+   */
+  pinned: GithubRepo[];
+  pinnedSource: "pinned" | "top-starred";
   stats: {
     totalStars: number;
     totalForks: number;
@@ -96,6 +103,79 @@ function ghHeaders(): HeadersInit {
   return headers;
 }
 
+interface GqlPinnedNode {
+  name: string;
+  description: string | null;
+  url: string;
+  homepageUrl: string | null;
+  stargazerCount: number;
+  forkCount: number;
+  primaryLanguage: { name: string } | null;
+  repositoryTopics: { nodes: { topic: { name: string } }[] };
+  pushedAt: string;
+}
+
+/**
+ * Real pinned repositories, which only exist in the GraphQL API. Returns null
+ * without a token (GraphQL rejects unauthenticated calls) so the caller can
+ * fall back to top-starred.
+ */
+async function fetchPinnedRepos(username: string): Promise<GithubRepo[] | null> {
+  if (!process.env.GITHUB_TOKEN) return null;
+
+  const query = `
+    query($login: String!) {
+      user(login: $login) {
+        pinnedItems(first: 6, types: REPOSITORY) {
+          nodes {
+            ... on Repository {
+              name
+              description
+              url
+              homepageUrl
+              stargazerCount
+              forkCount
+              primaryLanguage { name }
+              repositoryTopics(first: 5) { nodes { topic { name } } }
+              pushedAt
+            }
+          }
+        }
+      }
+    }`;
+
+  try {
+    const res = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+        "Content-Type": "application/json",
+        "User-Agent": "portfolio-site",
+      },
+      body: JSON.stringify({ query, variables: { login: username } }),
+    });
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const nodes: GqlPinnedNode[] = json?.data?.user?.pinnedItems?.nodes ?? [];
+    if (nodes.length === 0) return null;
+
+    return nodes.map((r) => ({
+      name: r.name,
+      description: r.description,
+      url: r.url,
+      homepage: r.homepageUrl?.trim() ? r.homepageUrl : null,
+      stars: r.stargazerCount,
+      forks: r.forkCount,
+      language: r.primaryLanguage?.name ?? null,
+      topics: r.repositoryTopics?.nodes?.map((n) => n.topic.name) ?? [],
+      pushedAt: r.pushedAt,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 export async function getGithubData(): Promise<GithubData | null> {
   const username = await resolveGithubUsername();
   if (!username) return null;
@@ -151,7 +231,11 @@ export async function getGithubData(): Promise<GithubData | null> {
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
 
+    const truePinned = await fetchPinnedRepos(username);
+
     const data: GithubData = {
+      pinned: truePinned ?? repos.slice(0, 6),
+      pinnedSource: truePinned ? "pinned" : "top-starred",
       profile: {
         login: p.login,
         name: p.name,

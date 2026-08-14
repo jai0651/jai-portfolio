@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import Interests from "@/components/Interests";
 import Photo from "@/components/Photo";
+import ShippedMarquee from "@/components/ShippedMarquee";
 import Section from "@/components/Section";
 import SectionHeader from "@/components/SectionHeader";
 import Social from "@/components/Social";
@@ -229,32 +230,8 @@ export default function Home() {
       {/* ── Interests ───────────────────────────────────────────── */}
       <Interests />
 
-      {/* ── Skills ticker ───────────────────────────────────────── */}
-      {skills.length > 0 && (
-        <div
-          className="overflow-hidden border-b border-line py-5"
-          /* Mask instead of gradient overlays so the fade works on any
-             background tone rather than only over --color-primary. */
-          style={{
-            maskImage:
-              "linear-gradient(to right, transparent, #000 7%, #000 93%, transparent)",
-            WebkitMaskImage:
-              "linear-gradient(to right, transparent, #000 7%, #000 93%, transparent)",
-          }}
-        >
-          <div className="flex w-max animate-marquee gap-3">
-            {[...skills, ...skills].map((skill, i) => (
-              <span
-                key={`${skill.id}-${i}`}
-                className="flex items-center gap-2 whitespace-nowrap font-mono text-sm text-muted"
-              >
-                <span className="text-accent-dim">▹</span>
-                {skill.name}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* ── What I have shipped, scrolling ─────────────────────── */}
+      <ShippedMarquee />
 
       <Stats />
     </>

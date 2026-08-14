@@ -85,6 +85,7 @@
   --animate-float: float 6s ease-in-out infinite;
   --animate-shimmer: shimmer 2.5s linear infinite;
   --animate-marquee: marquee 40s linear infinite;
+  --animate-marquee-reverse: marquee-reverse 46s linear infinite;
   --animate-scan: scan 8s linear infinite;
   --animate-pulse-ring: pulse-ring 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
@@ -112,6 +113,12 @@
 @keyframes marquee {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
+}
+/* Second row runs the other way — two opposing rows read as "range" far more
+   than one row does, and the counter-motion stops it looking like a banner. */
+@keyframes marquee-reverse {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
 }
 @keyframes scan {
   0% { transform: translateY(-100%); }
@@ -374,8 +381,25 @@
    *   diagrams    .diagram + .a .b .c .w .g .m colour spans
    *   data        .pill, .kpi > .box > .v/.k
    */
+  /*
+   * Body copy is near-ink, not muted. Muted is a caption colour; over a
+   * 1500-word article it reads as permanently low-contrast.
+   */
   .tech-article {
-    @apply text-[17px] leading-[1.75] text-muted;
+    @apply text-[17px] leading-[1.75] text-ink/85;
+  }
+
+  /*
+   * Wide figures, narrow text. The container stays at 860px so diagrams,
+   * tables and KPI rows have room, while prose is held to ~68ch — at the full
+   * 860px, 17px text runs ~101 characters per line against an optimum of
+   * 60-75, and the eye loses its place on every return sweep.
+   */
+  .tech-article > p,
+  .tech-article > ul,
+  .tech-article > ol,
+  .tech-article > blockquote {
+    max-width: 68ch;
   }
 
   .tech-article h2 {
