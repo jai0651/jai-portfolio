@@ -24,6 +24,10 @@ export const metadata = {
   title: "Jai Shankar — Software Engineer / AI & LLM Engineer",
   description:
     "Software engineer and AI/LLM engineer working at the intersection of software, machine learning, maths and physics. LLM agents in production, ML systems, and differentiable-physics research (IIT Delhi).",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/apple-icon" }],
+  },
 };
 
 export default function RootLayout({

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Jai Shankar">
+  <rect width="32" height="32" rx="8" fill="#0b0f17"/>
+  <path
+    d="M8.6 8.4 18.2 16 8.6 23.6"
+    fill="none"
+    stroke="#f0b429"
+    stroke-width="3.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <rect x="20.4" y="19.6" width="5.8" height="3.6" rx="1" fill="#f0b429"/>
+</svg>
