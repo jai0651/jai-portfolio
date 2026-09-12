@@ -597,9 +597,14 @@
     opacity: 1;
   }
   @media (hover: hover) and (pointer: fine) {
+    /*
+     * Muted, not erased. Full grayscale at 0.6 opacity turned every thumbnail
+     * into a grey rectangle against a dark card, which reads as a broken image
+     * rather than a restrained one. This still gives hover somewhere to go.
+     */
     .thumb-duotone {
-      filter: grayscale(1);
-      opacity: 0.6;
+      filter: grayscale(0.45) contrast(1.05);
+      opacity: 0.88;
     }
     .group:hover .thumb-duotone {
       filter: grayscale(0);
