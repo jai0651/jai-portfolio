@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The bugs that matter in an ML system do not raise exceptions</title>
+<meta name="description" content="Building a video intelligence engine from scratch, where nearly every real failure was caught by a measurement disagreeing with something already written down, and none of them by a stack trace." />
+<meta name="date" content="2026-09-12" />
+<meta name="tags" content="ai engineering, retrieval, multimodal, evaluation, video" />
+</head>
+<body>
+<main>
+
+<p>I am building an engine that turns a long video into something you can
+question. Upload a two-hour lecture, ask when backpropagation was explained or
+which segments show a red car, and get an answer back with the timestamps and
+frames that support it.</p>
+
+<p>Several modules in, a pattern has become impossible to ignore. Almost none of
+the failures that actually mattered announced themselves. They were found when a
+number disagreed with a sentence I had already written, and the bad version of
+each one would have shipped looking exactly like success.</p>
+
+<div class="diagram"><span class="b">┌──────────── INGESTION · throughput-bound, must fit in 16 GB ────────────┐</span>
+  video ─▶ <span class="a">DECODE</span> ─▶ <span class="a">FRAME SELECT</span> ─┬─▶ vision encoder ─┐
+             <span class="m">M0</span>          <span class="m">M4</span>        ├─▶ ASR + timestamps├─▶ <span class="g">TEMPORAL INDEX</span>
+                                   └─▶ OCR ────────────┘        <span class="m">M6</span>
+<span class="b">└─────────────────────────────────────────────────────────────────────────┘</span>
+
+<span class="w">┌──────────────────── QUERY · latency-bound ──────────────────────────────┐</span>
+  question ─▶ <span class="a">RETRIEVE</span> ─▶ <span class="a">FUSE</span> ─▶ <span class="a">TEMPORAL RERANK</span> ─▶ evidence ─▶ <span class="c">VLM</span>
+                <span class="m">M6/M7</span>       <span class="m">M7</span>            <span class="m">M8</span>              <span class="m">M9</span>        <span class="m">answer</span>
+<span class="w">└─────────────────────────────────────────────────────────────────────────┘</span>
+
+  <span class="m">Two systems in one repo, with opposite engineering constraints.</span>
+  <span class="m">Conflating them is the classic mistake.</span></div>
+
+<h2><span class="num">1</span>The shortcut that is correct on your test data</h2>
+
+<p>The first version of my frame object carried an index, and computed time as
+<code>index / fps</code> at the call site. Simpler, no time-base arithmetic, and
+on my test video the measured drift against the container's own timestamps was
+0.00 ms. Exactly right.</p>
+
+<p>It is right only for constant frame rate video. Screen recorders emit frames
+on change, so a QuickTime or Zoom recording at "30 fps" is averaging, and
+index-derived time drifts without bound. The entire deliverable of this system
+is a timestamp a user clicks, so the failure mode is a confident citation
+pointing at the wrong moment. There is no test that catches it unless the test
+checks the number.</p>
+
+<div class="callout">
+<span class="label">The bug class</span>
+A shortcut that is correct on your test data survives review, survives the test
+suite, and ships. The defence is to ask which property of the input makes the
+shortcut valid, then check whether real inputs have it. If the answer is
+"sometimes", write the assertion now, while you still remember why it matters.
+</div>
+
+<p>Time is now taken from the container's presentation timestamps, and a test
+asserts that the two agree on a file known to be constant rate. When that test
+eventually fails, it will be telling me something true about the input rather
+than something wrong about the code.</p>
+
+<h2><span class="num">2</span>The assumption that was cheap to believe</h2>
+
+<p>Encoders insert a keyframe at scene cuts. So a keyframe scan, which costs
+0.03 times a full decode, should hand the shot detector its boundaries almost
+for free. That is plausible, cheap, and it would have quietly capped the
+detector's recall forever.</p>
+
+<p>Because I authored the test video, I could check it. x264 found one boundary
+of four. It broke its regular three-second cadence exactly once, at the hard cut.
+The dissolve produced no keyframe at all, and two of the boundaries only look
+found because the cadence happens to land near them.</p>
+
+<p>So keyframes are a high-precision, low-recall candidate generator: a broken
+cadence means something, silence means nothing. Useful as a prior, useless as an
+answer.</p>
+
+<p>The second half of that result is the more interesting one. The boundary the
+encoder missed was the dissolve, and a commercial scene-cut heuristic fails on
+dissolves for the same reason mine does, because the change per frame is
+genuinely small. When a well-tuned production system fails the same way yours
+does, the difficulty is in the problem rather than in your implementation, and
+that is worth knowing before you spend a week on it.</p>
+
+<h2><span class="num">3</span>A metric must give a perfect input a perfect score</h2>
+
+<p>This is the one I would most like to have known earlier.</p>
+
+<p>I measured how well word-level timestamps from speech recognition locate a
+sentence in a video, got 0.60 seconds of mean error and a segment IoU of 0.73,
+and wrote a paragraph about how a perfect transcript is not a perfect citation.
+It was a nice paragraph.</p>
+
+<p>Then a test failed. The test feeds the metric an oracle transcript, meaning
+the authored text with the authored timings, which has zero error by
+construction. It scored 0.64 seconds.</p>
+
+<div class="callout warn">
+<span class="label">Two faults, both invisible</span>
+The metric chose which hypothesis words to score by asking whether their
+midpoint fell within one second of the authored sentence. It was using the
+predicted timings to decide which timings to measure, which is circular. And one
+second is wider than the 0.45 second gap between my sentences, so every
+measurement absorbed words from its neighbours and inflated every span.
+</div>
+
+<p>Aligning by text instead, with a Levenshtein backtrace, so that timings play
+no part in selecting what to measure: mean error 0.15 seconds, IoU 0.88 to 0.93.
+The real result was four times better than the one I had written about.</p>
+
+<p>The assertion that caught it is trivial. Feed the metric a perfect input,
+require a perfect score. It needs no ground truth corpus, only a control you
+build yourself, and it caught a measurement error large enough to have changed
+the chapter's conclusion. Any metric whose selection step depends on the quantity
+being measured is circular, and that is the first thing to check.</p>
+
+<h2><span class="num">4</span>When the prose and the numbers disagree</h2>
+
+<p>I shipped a per-modality table with a hand-written verdict column asserting
+that visual and on-screen-text questions were impossible for a speech-only
+system. The same table printed a hit rate of 1.000 for both. I had written the
+verdict before running the measurement, and it did not survive contact.</p>
+
+<p>Both were true, about different things. Retrieval really does find the right
+moment for "what colour is the object that crosses the screen", because the
+narration says an object travels across the screen while never naming the
+colour. Localisation succeeded. Answerability failed. No metric in the harness
+could tell those apart.</p>
+
+<p>So there is now a metric for the second property: does the retrieved text
+actually contain the answer. It reads 0.778 for speech questions and exactly
+0.000 for every other type, which is the claim the prose was trying to make and
+had not measured.</p>
+
+<p>When your writing and your numbers disagree, the interesting outcome is
+usually neither fixing the wording nor fixing the code. It is that you are
+measuring the wrong quantity. Finding the right moment and having the answer are
+different properties, and a system that conflates them looks fine right up until
+it has to produce an answer.</p>
+
+<h2><span class="num">5</span>The benchmark needs its own tests</h2>
+
+<p>My temporal questions scored a hit rate of 1.000. So did random retrieval.
+Exactly 1.000.</p>
+
+<p>That one was my fault at authoring time. Questions like "which is discussed
+first, embeddings or containers" had been given ground-truth intervals spanning
+from one shot to nearly the end of the video. Any chunk overlaps an interval that
+wide, so every retrieval counts as correct and the question measures nothing.</p>
+
+<p>The two questions stay in the eval set, reported with their random baseline
+next to them rather than quietly dropped, because a question that measures
+nothing is instructive only if you can see it. The assertion that caught it is a
+property of the eval set rather than of the system: chance-level performance on
+a question must be below some threshold. An over-broad ground-truth interval
+destroys a question, and tight intervals are the only thing that makes temporal
+overlap mean anything.</p>
+
+<h2><span class="num">6</span>One measurement is an anecdote</h2>
+
+<p>Having measured embedding contrast at 512 dimensions, the ordering across
+three data regimes looked like a law, so a test asserted it. It failed
+immediately at 256 dimensions, where two of the three swap places.</p>
+
+<p>Only one part of that ordering was a theoretical statement. The rest was a
+coincidence of the settings I happened to run first, because the regimes are
+controlled by different parameters that scale with dimension differently.</p>
+
+<p>The moment a pattern in your results feels like a law, vary the thing you
+were not varying. The cheap version is to sweep that parameter inside the test,
+which is exactly what caught this.</p>
+
+<h2><span class="num">7</span>The same bug class twice, in different disguises</h2>
+
+<p>An intrinsic dimension estimator reported 0.3. There is no such thing as a
+fractional intrinsic dimension below one, so the estimator was broken.</p>
+
+<p>The estimator assumes points come from a continuous density, so no two
+coincide. Video violates that completely. Consecutive frames of a static slide
+sit a millionth of a unit apart, one ratio in the estimator reached 345,901, and
+a handful of points dominated the sum. 75 of 89 frames had a near twin.</p>
+
+<p>I had already found and fixed this same near-duplicate hazard once, in a
+different diagnostic, where the symptom was infinity rather than 0.3. Fixing one
+instance of a bug class does not fix the class. The useful outcome was not the
+patch but promoting near-duplicate fraction to a first-class diagnostic, because
+the quantity that broke the estimator turned out to be one of the most important
+facts about the data.</p>
+
+<h2><span class="num">8</span>The environment is part of the system</h2>
+
+<p>Two of these cost an afternoon between them and neither is about machine
+learning.</p>
+
+<p>The newest Python is routinely the worst choice for an ML project, because
+wheel availability lags releases by six to twelve months and the long tail lags
+further. Pinning one minor version back turned a from-source build into an
+install that finished in one go.</p>
+
+<p>The better story is the one where the interpreter aborted. Tests died during
+a torch import, but only when two particular test files ran in the same process.
+Two copies of OpenMP were in the virtualenv, one shipped by torch and one by the
+vector index library, and the second runtime to initialise aborts the process.
+Import order does not fix it, because the abort happens on initialisation rather
+than import, so reordering merely changes which library dies.</p>
+
+<p>The available workaround is an environment flag documented as unsafe, which
+may silently produce incorrect results. Rather than deciding it was probably
+fine, there is now a test that makes all three libraries compute the same top-k
+in one process and asserts they agree. If the flag ever does what the
+documentation warns about, something fails loudly.</p>
+
+<p>A bug that only appears when two test files run together is an environment
+bug, not a logic bug. Go and look at the process rather than the code.</p>
+
+<h2><span class="num">9</span>Why build any of it from scratch</h2>
+
+<p>Four components here are written explicitly and then measured against the
+production alternative behind the same interface: a mini-CLIP, the approximate
+nearest neighbour index built up from brute force through IVF to HNSW by hand, a
+shot detector, and a spatiotemporal video encoder.</p>
+
+<p>Not because you would ship them. The scratch versions lose, and they are
+supposed to. The reason is that you cannot reason about a retrieval stack you
+have never implemented, and every failure above came from reasoning about the
+stack rather than from writing a layer. The value showed up in the diagnostics,
+the metrics and the eval set, which are the parts nobody hands you.</p>
+
+<p>The decision log and the full failure catalogue, with the numbers and the
+dates, are in the repo under <code>docs/</code>.</p>
+
+</main>
+</body>
+</html>
