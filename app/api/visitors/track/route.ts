@@ -45,10 +45,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Only track home page visits
-    const path = body.path || "/";
-    if (path !== "/") {
-      return NextResponse.json({ success: false, message: "Only home page visits are tracked" }, { status: 400 });
+    /*
+     * Every public path is recorded, not just "/", so the admin side can answer
+     * which pages people actually read. Normalised to keep the cardinality of
+     * the column bounded: query strings and trailing slashes collapse, admin is
+     * never recorded, and anything absurd is rejected rather than stored.
+     */
+    const raw = typeof body.path === "string" ? body.path : "/";
+    const path = raw.split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
+    if (!path.startsWith("/") || path.length > 180 || path.startsWith("/admin")) {
+      return NextResponse.json({ success: false, message: "Not tracked" }, { status: 400 });
     }
 
     const visitor = await prisma.visitor.create({
@@ -58,7 +64,7 @@ export async function POST(req: NextRequest) {
         city: geoData.city,
         region: geoData.region,
         userAgent,
-        path: "/",
+        path,
         referer,
       },
     });

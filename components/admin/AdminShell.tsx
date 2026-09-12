@@ -21,11 +21,13 @@ import {
   FaSignOutAlt,
   FaExternalLinkAlt,
   FaFileCode,
+  FaChartBar,
 } from "react-icons/fa";
 import { HiBars3, HiXMark } from "react-icons/hi2";
 
 const nav = [
   { label: "Dashboard", href: "/admin", icon: <FaTachometerAlt /> },
+  { label: "Analytics", href: "/admin/analytics", icon: <FaChartBar /> },
   { label: "Visitors", href: "/admin/visitors", icon: <FaEye /> },
   { label: "Messages", href: "/admin/messages", icon: <FaEnvelope /> },
   { label: "Media", href: "/admin/media", icon: <FaImages /> },
