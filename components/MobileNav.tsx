@@ -15,6 +15,7 @@ const links = [
   { label: "~", path: "/" },
   { label: "~/work", path: "/work" },
   { label: "~/blog", path: "/blog" },
+  { label: "~/learn", path: "/learn" },
   { label: "~/resume", path: "/resume" },
   { label: "~/contact", path: "/contact" },
 ];
