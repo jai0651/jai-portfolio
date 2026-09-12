@@ -5,10 +5,21 @@ import { FiArrowLeft, FiArrowRight, FiEye } from "react-icons/fi";
 import Section from "@/components/Section";
 import LikeButton from "@/components/blog/LikeButton";
 import ViewTracker from "@/components/blog/ViewTracker";
-import { formatDate, getAdjacentPosts, getPostBySlug } from "@/lib/blog";
+import { formatDate, getAdjacentPosts, getPostBySlug, getPublishedSlugs } from "@/lib/blog";
 
-// Uploaded at runtime, so rendered per request rather than prerendered.
-export const revalidate = 30;
+/*
+ * Posts are prerendered at build and then held in the ISR cache, which is what
+ * lets the edge answer without a round trip to the function and the database.
+ * A post uploaded after the build is not in this list; dynamicParams (on by
+ * default) renders it on demand and caches it from then on. The admin upload
+ * calls revalidatePath, so a change is live immediately rather than after the
+ * window below.
+ */
+export const revalidate = 3600;
+
+export async function generateStaticParams() {
+  return (await getPublishedSlugs()).map((slug) => ({ slug }));
+}
 
 interface Props {
   params: Promise<{ slug: string }>;

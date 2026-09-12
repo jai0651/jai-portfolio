@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
 import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
@@ -10,6 +11,16 @@ const MAX_BYTES = 2 * 1024 * 1024; // 2 MB — a text doc, generously
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
   return !!session && (session.user as { role?: string }).role === "admin";
+}
+
+/*
+ * The blog pages are cached for an hour, so a write has to say so explicitly.
+ * Without this, publishing a post would appear to do nothing for up to that
+ * long, which is exactly the trap a long revalidate window sets.
+ */
+function refreshBlogCache(slug?: string) {
+  revalidatePath("/blog");
+  if (slug) revalidatePath(`/blog/${slug}`);
 }
 
 /** Admin listing — includes drafts and metrics. */
@@ -150,6 +161,7 @@ export async function POST(req: NextRequest) {
           },
         });
 
+    refreshBlogCache(slug);
     return NextResponse.json({ post, replaced: !!existing });
   } catch (error) {
     console.error("Failed to upload post:", error);
@@ -188,6 +200,8 @@ export async function PUT(req: NextRequest) {
           : {}),
       },
     });
+    refreshBlogCache(post.slug);
+    if (post.slug !== existing.slug) refreshBlogCache(existing.slug);
     return NextResponse.json({ post });
   } catch {
     return NextResponse.json({ message: "Failed to update post" }, { status: 500 });
@@ -213,6 +227,7 @@ export async function DELETE(req: NextRequest) {
     }
     // BlogLike rows cascade via the relation.
     await prisma.blogPost.delete({ where: { id } });
+    refreshBlogCache(post?.slug);
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ message: "Failed to delete post" }, { status: 500 });

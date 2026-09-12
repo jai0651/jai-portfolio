@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 
@@ -46,14 +47,32 @@ export async function getPublishedPosts(sort: SortMode = "recent"): Promise<Post
   return rows.map((r) => ({ ...r, tags: splitTags(r.tags) }));
 }
 
-export async function getPostBySlug(slug: string) {
+/*
+ * Wrapped in React's cache() because generateMetadata and the page component
+ * both need the post, and without this that is two identical round trips to
+ * Postgres for every render.
+ */
+export const getPostBySlug = cache(async (slug: string) => {
   const post = await prisma.blogPost.findUnique({ where: { slug } });
   if (!post || !post.published) return null;
   return { ...post, tags: splitTags(post.tags) };
+});
+
+/** Slugs to prerender. Returning [] on failure keeps a build alive without a database. */
+export async function getPublishedSlugs(): Promise<string[]> {
+  try {
+    const rows = await prisma.blogPost.findMany({
+      where: { published: true },
+      select: { slug: true },
+    });
+    return rows.map((r) => r.slug);
+  } catch {
+    return [];
+  }
 }
 
 /** Neighbours for prev/next, in the same order as the recent listing. */
-export async function getAdjacentPosts(slug: string) {
+export const getAdjacentPosts = cache(async (slug: string) => {
   const all = await prisma.blogPost.findMany({
     where: { published: true },
     select: { slug: true, title: true },
@@ -64,7 +83,7 @@ export async function getAdjacentPosts(slug: string) {
     newer: i > 0 ? all[i - 1] : null,
     older: i >= 0 && i < all.length - 1 ? all[i + 1] : null,
   };
-}
+});
 
 /**
  * A stable per-reader id that isn't personally identifying: salted hash of
