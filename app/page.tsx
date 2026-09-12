@@ -35,7 +35,7 @@ const openVoice = () =>
 
 // Mirrors the profile_description site setting; only shown if that fetch fails.
 const DEFAULT_BIO =
-  "I build things that listen. LLM agents in production by day; by night, speech models from the ground up — VAD, ASR, TTS and the real-time pipeline between them, written in PyTorch rather than called over HTTP. Same instinct as my IIT Delhi thesis, which taught a cheap simulation to correct its own numerical error: open the box, learn every layer, then make it fast.";
+  "I build things that listen. LLM agents in production by day; by night, systems built from the ground up: VAD, ASR, TTS and the real-time pipeline between them, a video retrieval stack, and an assistant that runs entirely on one machine. Same instinct as my IIT Delhi thesis, which taught a cheap simulation to correct its own numerical error: open the box, learn every layer, then make it fast.";
 
 // Curated, hand-picked highlights — read like a git log of recent work.
 // Ordered as a narrative: production work, then from-scratch ML, then research.
@@ -43,32 +43,38 @@ const HIGHLIGHTS = [
   {
     tag: "feat(prod)",
     title: "Support-debug AI agent",
-    desc: "An LLM agent running in production that triages incoming support issues, reproduces them against logs, and root-causes bugs — cutting time-to-diagnosis for the team.",
+    desc: "An LLM agent running in production that triages incoming support issues, reproduces them against logs, and root-causes bugs, cutting time-to-diagnosis for the team.",
     href: null as string | null,
+  },
+  {
+    tag: "feat(agent)",
+    title: "Vela, a resident local assistant",
+    desc: "A process that keeps running after you close the window. She sees the room through the camera, hears you and answers out loud in about 2 seconds end to end, with everything except the language model on the machine: Silero VAD, whisper-base.en, Kokoro-82M at 13.2x realtime on Metal, and a three.js body.",
+    href: "https://github.com/jai0651/Vela",
+  },
+  {
+    tag: "feat(video)",
+    title: "Video intelligence engine from scratch",
+    desc: "Ask a two-hour video when backpropagation was explained and get the answer back with the timestamps and frames that prove it. A mini-CLIP, an ANN index, a shot detector and a spatiotemporal encoder all written explicitly, then benchmarked against the production alternative behind the same interface.",
+    href: "https://github.com/jai0651/VLM",
   },
   {
     tag: "feat(voice)",
     title: "Voice agent from scratch",
-    desc: "VAD, ASR, TTS and the real-time pipeline connecting them — built layer by layer in PyTorch rather than calling a pretrained black box. Swapping a BiGRU+CTC baseline for a Conformer halved word error on identical audio and ran 2.7× faster.",
+    desc: "VAD, ASR, TTS and the real-time pipeline connecting them, built layer by layer in PyTorch. A Conformer with BPE and dynamic chunk streaming replaced the BiGRU+CTC baseline and halved word error on identical audio at 2.7x the speed, then an ISTFT vocoder, voice cloning and speaker embeddings on top.",
     href: "https://github.com/jai0651/VAD-ASR",
+  },
+  {
+    tag: "feat(proto)",
+    title: "Tonecall, an inter-agent voice handshake",
+    desc: "Two AI agents on the same phone call detect each other with in-band DTMF and drop the speech-to-text to LLM to text-to-speech loop for a JSON side-channel, about 3 seconds against 4 to 6 per voice turn, while keeping the call open for a human.",
+    href: "https://github.com/jai0651/tonecall",
   },
   {
     tag: "feat(local)",
     title: "Fully local voice notetaker",
     desc: "Talk to a Mac, get organised Obsidian notes. Whisper large-v3-turbo on MLX and a local Qwen through Ollama, so the audio and the notes never leave the machine.",
     href: "https://github.com/jai0651/Local-AI-voice-notemaker",
-  },
-  {
-    tag: "feat(audio)",
-    title: "Real-time call denoiser",
-    desc: "DeepFilterNet3 sitting between the real microphone and a virtual audio device, so Zoom, Meet or a softphone only ever receive the clean signal.",
-    href: null as string | null,
-  },
-  {
-    tag: "feat(ml)",
-    title: "SMS classification",
-    desc: "A text-classification pipeline that labels and routes SMS messages by intent — from raw data to a deployed, evaluated model.",
-    href: null as string | null,
   },
   {
     tag: "research(iit-d)",
