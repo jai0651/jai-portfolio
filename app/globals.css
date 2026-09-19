@@ -552,6 +552,22 @@
    * distinguish its parts; .b borrows the blueprint-grid blue so the extra
    * hues still belong to the system.
    */
+  /*
+   * SVG figures. Diagrams used to be monospace ASCII in a horizontally
+   * scrolling block, which on a phone was a wall of 13px characters you had to
+   * drag sideways to read. These scale with the column instead.
+   */
+  .tech-article figure {
+    @apply my-6;
+  }
+  .tech-article figure svg {
+    @apply block w-full rounded-lg border border-line bg-surface shadow-e1;
+    height: auto;
+  }
+  .tech-article figure figcaption {
+    @apply mt-2 text-center text-[13px] text-faint;
+  }
+
   .tech-article .diagram {
     @apply my-5 overflow-x-auto rounded-lg border border-line bg-surface p-5 font-mono text-[13px] leading-[1.5] text-ink/85 shadow-e1;
     white-space: pre;
