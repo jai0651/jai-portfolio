@@ -48,7 +48,7 @@ agent under two seconds, that's where to look first — not at a smaller transcr
 
 <h2>Turn detection needs two layers</h2>
 
-<p>Your VAD tells you a pause happened. It does not tell you the turn ended, and
+<p>Your VAD tells you a pause happened. It doesn't tell you the turn ended, and
 treating those as the same thing builds something that interrupts people
 constantly.</p>
 
@@ -100,7 +100,7 @@ them out of it. Anything unmatched falls through to conversation.</p>
 converts a guarantee into a probability. Sometimes that's a good trade. Make it
 deliberately.</p>
 
-<h2>Tell the model what it cannot do</h2>
+<h2>Tell the model what it can't do</h2>
 
 <p>Small models fail in a specific way that will undermine trust in your
 assistant faster than anything else: ask about a capability they don't have and
@@ -138,16 +138,14 @@ seconds to produce 4.9 seconds of audio. The vocoder was 4.8 s of that and is
 fine. The token generator was 28.4 s — 81.3% of the time, one stage, 5.7× too
 slow. Every optimisation I'd been considering was aimed somewhere else.</p>
 
-<div class="kpi">
-  <div class="box"><span class="v">34.9s</span><span class="k">to speak 4.9s of audio</span></div>
-  <div class="box"><span class="v">81.3%</span><span class="k">in one stage</span></div>
-  <div class="box"><span class="v">4.4</span><span class="k">tokens/sec</span></div>
-  <div class="box"><span class="v">25</span><span class="k">needed for realtime</span></div>
-</div>
+<figure>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Voice cloning latency broken down by stage"><title>Voice cloning latency broken down by stage</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">34.9 seconds to speak 4.9 seconds of audio</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">one voice-clone reply, profiled by stage</text><text x="206" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">token generator (T3)</text><path d="M220 62 h383.40909090909093 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-383.40909090909093 z" fill="#b5790a"/><text x="619.409090909091" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">28.41 s</text><text x="220" y="94" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">81.3% · 4.4 tok/s where 25 is realtime</text><text x="206" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">S3Gen, the vocoder</text><path d="M220 108 h61.86363636363636 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-61.86363636363636 z" fill="#4f7fb8"/><text x="297.8636363636364" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">4.83 s</text><text x="377.8636363636364" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">13.8% · this part is fine</text><text x="206" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">everything else</text><path d="M220 154 h19.045454545454543 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-19.045454545454543 z" fill="#4f7fb8"/><text x="255.04545454545453" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">1.69 s</text><text x="335.0454545454545" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">4.8%</text><text x="20" y="218" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Realtime needs 25 tokens per second. One stage is 5.7× too slow and every</text><text x="20" y="239" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">optimisation I had been considering was aimed somewhere else.</text></svg>
+<figcaption>Profile by stage before optimising. The vocoder was never the problem.</figcaption>
+</figure>
 
 <p>Why that stage is slow is architectural, not a tuning problem. It generates
 speech autoregressively: a 0.5B transformer emitting discrete speech tokens at 25 per second of audio, one at a time, each conditioned on every token before it.
-A five second reply is ~125 sequential forward passes that cannot be
+A five second reply is ~125 sequential forward passes that can't be
 parallelised. Kokoro is fast because it isn't autoregressive — it predicts an entire mel spectrogram in essentially one shot. That difference is the entire 90×
 gap.</p>
 
@@ -156,21 +154,16 @@ gap.</p>
 <p>Here's the comparison that should change how you pick components on Apple
 silicon, both measured on the same machine:</p>
 
-<div class="tablewrap">
-<table>
-<thead><tr><th>Model</th><th>Params</th><th>Runtime</th><th>Rate</th></tr></thead>
-<tbody>
-<tr><td>Qwen2.5</td><td>1.5B</td><td>MLX</td><td>~20 tok/s</td></tr>
-<tr><td>Chatterbox T3</td><td>0.5B</td><td>PyTorch / MPS</td><td>4.4 tok/s</td></tr>
-</tbody>
-</table>
-</div>
+<figure>
+<svg viewBox="0 0 760 214" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Token rate for two models on two runtimes"><title>Token rate for two models on two runtimes</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Same laptop, same kind of work</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">autoregressive decode is memory-bandwidth bound, not compute bound</text><text x="246" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">Qwen2.5 · 1.5B · MLX</text><path d="M260 62 h337.6666666666667 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-337.6666666666667 z" fill="#4f7fb8"/><text x="613.6666666666667" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">~20 tok/s</text><text x="260" y="94" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">three times the parameters</text><text x="246" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">Chatterbox T3 · 0.5B · MPS</text><path d="M260 108 h71.16666666666667 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-71.16666666666667 z" fill="#b5790a"/><text x="347.1666666666667" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">4.4 tok/s</text><text x="460.1666666666667" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">and four and a half times slower</text><text x="20" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Per parameter that is MLX being roughly 13× more efficient. Check what</text><text x="20" y="193" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">runtime a component ships for before you compare model sizes.</text></svg>
+<figcaption>Three times the parameters, four and a half times the speed.</figcaption>
+</figure>
 
 <p>Three times the parameters, four and a half times the speed. Per parameter,
 that's MLX being roughly 13× more efficient.</p>
 
 <p>Why? Because of what autoregressive decoding actually is: memory-bandwidth bound, not compute bound. Every token means reading the entire weight matrix out of memory,
-and the arithmetic done with it is trivial by comparison. MLX uses unified
+and the arithmetic done with it's trivial by comparison. MLX uses unified
 memory properly and avoids per-kernel launch overhead; MPS does neither well. If
 your model also runs classifier-free guidance that's two forward passes per
 token, so double the bandwidth again — dropping the guidance weight to 0.3
@@ -179,13 +172,18 @@ bought me about 2×.</p>
 <p>So if you're choosing components for on-device inference on a Mac, check what
 runtime they ship for before you compare model sizes. It's a bigger lever.</p>
 
+<h2>Always discard the first run</h2>
+
+<figure>
+<svg viewBox="0 0 760 307" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A benchmark whose impossibility revealed warmup"><title>A benchmark whose impossibility revealed warmup</title><text x="20" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">The benchmark that could not be true</text><text x="20" y="46" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">realtime factor, higher is faster</text><text x="230" y="89" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">first run, short text</text><path d="M240 78 h25.411764705882355 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-25.411764705882355 z" fill="#4f7fb8"/><text x="281.4117647058824" y="89" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.05×</text><text x="230" y="135" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">first run, longer text</text><path d="M240 124 h166.58823529411762 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-166.58823529411762 z" fill="#4f7fb8"/><text x="422.5882352941176" y="135" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.29×</text><text x="230" y="181" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">warm</text><path d="M240 170 h343.0588235294117 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-343.0588235294117 z" fill="#b5790a"/><text x="599.0588235294117" y="181" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.59×</text><path d="M236 84 L236 124" fill="none" stroke="#f0883e" stroke-width="2"/><text x="560" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">longer input, less time?</text><text x="20" y="236" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Longer text cannot take proportionally less time. That is what made the</text><text x="20" y="257" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">result readable: warmup had landed entirely on the first call. Throw away</text><text x="20" y="278" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">the first run of everything.</text></svg>
+<figcaption>An impossible result is a gift: it tells you the measurement is wrong before you act on it.</figcaption>
+</figure>
+
 <h2>Practical notes</h2>
 
 <ul>
-<li><strong>Always discard the first run.</strong> My first benchmark said 0.05×
-realtime for short text and 0.29× for longer text, which is impossible — longer
-input can't take proportionally less time. Warmup had landed entirely on the
-first call. Warm, it's 0.59×.</li>
+<li><strong>Report thermal state.</strong> On a fanless machine an hour into
+work the numbers move meaningfully. Say which run, how warm, how many.</li>
 <li><strong>Report thermal state.</strong> On a fanless machine an hour into
 work, numbers move meaningfully. Say which run, how warm, how many.</li>
 <li><strong>Keep a model warm in a separate process.</strong> Mine pays 11.5 s

@@ -57,8 +57,18 @@ asserting the two agree on a file you know is constant-rate.</p>
 
 <h2>Frame selection: where your compute budget goes</h2>
 
-<p>You cannot encode every frame of a two-hour video, so this stage decides your
-whole accuracy-versus-cost frontier. The options, roughly in order of
+<p>You can't encode every frame of a two-hour video, and 84% of uniformly
+sampled frames turn out to be near duplicates of another frame, so you're
+paying to encode, store and search the same slide over and over.</p>
+
+<figure>
+<svg viewBox="0 0 760 214" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cheap change detection versus expensive embedding"><title>Cheap change detection versus expensive embedding</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Why frame selection is its own stage</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">measured on the same two-hour video</text><text x="216" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">change signal, 96 px</text><path d="M230 62 h375.1333333333333 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-375.1333333333333 z" fill="#b5790a"/><text x="621.1333333333333" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">517 frames/s</text><text x="621.1333333333333" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">scan everything in 0.5 min</text><text x="216" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">CLIP embedding, 336 px</text><path d="M230 108 h18.366666666666667 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-18.366666666666667 z" fill="#4f7fb8"/><text x="264.3666666666667" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">30.5 frames/s</text><text x="264.3666666666667" y="138" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">7.9 min for the same video</text><text x="20" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">A 17× gap. Scan every frame with the cheap signal, then spend the expensive</text><text x="20" y="193" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">encoder only on the frames that survive.</text></svg>
+<figcaption>The gap between the cheap signal and the expensive one is the entire argument for making selection its own stage.</figcaption>
+</figure>
+
+<p>That ratio is why the design has two stages: scan every frame with something
+cheap, then spend the encoder only on frames that survive. This stage decides
+your whole accuracy-versus-cost frontier. The options, roughly in order of
 sophistication: uniform sampling, motion-aware sampling, shot-boundary
 detection, and novelty-based coreset selection.</p>
 
@@ -80,6 +90,33 @@ frame is genuinely small. When a well-tuned production system fails the way
 yours does, the difficulty is in the problem, and you can stop trying to tune
 your way out.</p>
 
+<h2>Before you reach for a vector index</h2>
+
+<p>Every fast index works by ruling things out. IVF rules out whole regions of
+space, HNSW rules out everything it doesn't walk past. Both need your nearest
+neighbour to actually be near, and in high dimensions it stops being so.</p>
+
+<figure>
+<svg viewBox="0 0 760 373" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Contrast ratio falls as dimension rises"><title>Contrast ratio falls as dimension rises</title><text x="20" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Your nearest neighbour stops being near</text><text x="20" y="46" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">contrast = (mean − nearest) / mean distance · 4,000 uniform points per dimension</text><line x1="70" y1="226" x2="730" y2="226" stroke="#2e3a4d" stroke-width="1"/><text x="58" y="226" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">0.0</text><line x1="70" y1="151" x2="730" y2="151" stroke="#2e3a4d" stroke-width="1"/><text x="58" y="151" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">0.5</text><line x1="70" y1="76" x2="730" y2="76" stroke="#2e3a4d" stroke-width="1"/><text x="58" y="76" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">1.0</text><polyline points="70.0,76.2 202.0,117.3 334.0,171.7 466.0,200.3 598.0,213.6 730.0,217.3" fill="none" stroke="#b5790a" stroke-width="2.5" stroke-linejoin="round"/><circle cx="70" cy="76.15" r="5" fill="#b5790a" stroke="#10151f" stroke-width="2"/><text x="70" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">2</text><circle cx="202" cy="117.25" r="5" fill="#b5790a" stroke="#10151f" stroke-width="2"/><text x="202" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">8</text><circle cx="334" cy="171.7" r="5" fill="#b5790a" stroke="#10151f" stroke-width="2"/><text x="334" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">32</text><circle cx="466" cy="200.35" r="5" fill="#b5790a" stroke="#10151f" stroke-width="2"/><text x="466" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">128</text><circle cx="598" cy="213.55" r="5" fill="#b5790a" stroke="#10151f" stroke-width="2"/><text x="598" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">512</text><circle cx="730" cy="217.3" r="5" fill="#b5790a" stroke="#10151f" stroke-width="2"/><text x="730" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">1024</text><text x="82" y="80.15" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.999</text><text x="718" y="201.3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" fill="#dde3ec" text-anchor="end" dominant-baseline="middle">0.058</text><text x="400" y="274" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">dimensions</text><text x="20" y="302" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">At 1,024 dimensions your nearest neighbour is about 6% closer than a random</text><text x="20" y="323" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">point. An index that prunes by distance has almost nothing left to prune</text><text x="20" y="344" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">with.</text></svg>
+<figcaption>This is the curse of dimensionality as a number you can act on, not a slogan.</figcaption>
+</figure>
+
+<p>The saving grace is that real embeddings aren't uniform noise. A trained
+encoder produces something close to a low-dimensional manifold: measured on my
+own vectors, 512 nominal dimensions with about 24.8 actually used. That's why
+approximate search works at all in practice.</p>
+
+<p>Which leads to the least fashionable advice in this post.</p>
+
+<figure>
+<svg viewBox="0 0 760 281" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Brute force query throughput by corpus size"><title>Brute force query throughput by corpus size</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">How far exact brute force gets you</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">a two-hour lecture sampled at 0.2 fps is 1,440 vectors</text><text x="176" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">1,000 vectors</text><path d="M190 62 h410.6752 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-410.6752 z" fill="#b5790a"/><text x="616.6752" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">129,586 q/s</text><text x="616.6752" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">2.0 MB</text><text x="176" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">20,000</text><path d="M190 108 h20.0864 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-20.0864 z" fill="#b5790a"/><text x="226.0864" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">7,527 q/s</text><text x="226.0864" y="138" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">39.1 MB</text><text x="176" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">200,000</text><path d="M190 154 h-1.8144 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h--1.8144 z" fill="#b5790a"/><text x="204.1856" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">683 q/s</text><text x="204.1856" y="184" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">390.6 MB</text><text x="20" y="218" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">For a corpus this size brute force is not a placeholder, it is the correct</text><text x="20" y="239" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">answer. Build the index when you have the vectors to justify one, and not</text><text x="20" y="260" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">before.</text></svg>
+<figcaption>Exact search over 1,440 vectors takes a fraction of a millisecond. Build the index when the corpus justifies one.</figcaption>
+</figure>
+
+<p>One caveat if you do go brute force: don't materialise the full score
+matrix. At 1,000 queries by 1,000,000 vectors that's 4 GB for a result you
+immediately reduce to 1,000 by 10.</p>
+
 <h2>Three retrieval channels, and fusing them</h2>
 
 <p>A video carries at least three searchable signals, and they cover different
@@ -97,9 +134,9 @@ slides. On lecture content this one outperforms the visual channel pretty regula
 
 <p>Fusing them is mostly about score normalisation, because the three channels
 produce scores on incomparable scales. Reciprocal rank fusion is probably the right default: it uses only the rank, so you don't have to calibrate
-anything. Try weighted score fusion after you have a benchmark, not before.</p>
+anything. Try weighted score fusion after you've a benchmark, not before.</p>
 
-<h2>Chunks are not answers</h2>
+<h2>Chunks aren't answers</h2>
 
 <p>Retrieval gives you chunks. A user wants an interval. Reranking is where you
 merge adjacent hits, expand to neighbours, and rescore the merged span with a
@@ -137,7 +174,7 @@ per-modality table claimed visual questions were impossible for a speech-only
 system while printing hit@5 of 1.000 for them. Both were true about different
 things: the narration says "an object travels across the screen" without ever
 naming its colour, so retrieval finds the right moment and the answer isn't
-there. Localisation succeeded, answerability failed, and no metric I had could
+there. Localisation succeeded, answerability failed, and no metric I'd could
 tell them apart. Add one that asks whether the retrieved text actually contains
 the answer — mine reads 0.778 for speech questions and exactly 0.000 for every
 other type.</p>
@@ -181,10 +218,11 @@ so reordering only changes which library dies.</p>
 
 <h2>What to build from scratch, and what not to</h2>
 
-<p>I wrote four components explicitly and then measured them against the
+<p>Three components here are written explicitly and then measured against the
 production alternative behind the same interface: a mini-CLIP, the nearest
-neighbour index built up from brute force through IVF to HNSW, a shot detector,
-and a spatiotemporal video encoder.</p>
+neighbour index built up from brute force through IVF to HNSW, and a shot
+detector. A spatiotemporal video encoder is planned and not built, so I won't
+pretend to lessons from it.</p>
 
 <p>The scratch versions lose, and they're meant to. Ship FAISS and a pretrained
 encoder. But you can't reason about a retrieval stack you've never implemented,

@@ -19,8 +19,7 @@ per-minute telephony charges.</p>
 
 <p><a href="https://github.com/jai0651/tonecall">Tonecall</a> lets them notice
 they're both machines and move the conversation onto a data channel without
-dropping the call. The call stays up, because a human might walk in at any
-moment. Only the transport changes.</p>
+dropping the call. That call stays up, because a human might walk in at any moment. Only the transport changes.</p>
 
 <figure>
 <svg viewBox="0 0 780 196" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Voice every turn versus a JSON side-channel"><title>Voice every turn versus a JSON side-channel</title><text x="16" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#76818f" text-anchor="start" dominant-baseline="middle">WITHOUT</text><rect x="16" y="40" width="330" height="70" rx="10" fill="#161d29" stroke="#f0883e" stroke-width="2"/><text x="181" y="64" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">voice, every turn</text><text x="181" y="88" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">4–6 s each</text><text x="16" y="132" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">slow, and billed per minute</text><text x="414" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#76818f" text-anchor="start" dominant-baseline="middle">WITH</text><rect x="414" y="40" width="330" height="34" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="579" y="57" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">voice intro</text><text x="756" y="57" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">~10 s</text><rect x="414" y="80" width="330" height="34" rx="10" fill="#161d29" stroke="#5ec27e" stroke-width="2"/><text x="579" y="97" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">JSON side-channel</text><text x="756" y="97" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#5ec27e" text-anchor="end" dominant-baseline="middle">~3 s</text><rect x="414" y="120" width="330" height="34" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="579" y="137" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">voice outro</text><text x="756" y="137" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">~5 s</text><text x="414" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#5ec27e" text-anchor="start" dominant-baseline="middle">voice only where it earns its keep</text></svg>
@@ -76,15 +75,15 @@ arrive.</p>
 
 <h2>Asking "are you a machine?" in audio</h2>
 
-<p>The channel only carries sound, so the probe has to <em>be</em> sound. What I
+<p>That channel only carries sound, so the probe has to <em>be</em> sound. What I
 landed on is in-band DTMF — the touch-tone digits every phone system on earth
 already forwards without being asked. Each agent emits a short tone sequence
 acting as a pairing token, and anything that answers with a well-formed token
 is, by construction, not a human.</p>
 
 <p>Reaching for something that old is deliberate. DTMF survives transcoding,
-works through carriers you have no agreement with, and asks nothing of the network
-(no agreement, no cooperation, no config). The comparison I keep coming back to is fax machines, but for modern AI
+works through carriers you've no agreement with, and asks nothing of the network
+(no agreement, no cooperation, no config). Closest comparison I've got is fax machines, but for modern AI
 agents: two machines screeching at each other for a moment to agree on a better
 way to talk.</p>
 
@@ -111,9 +110,14 @@ late, and they leave an audible record of what got agreed.</p>
   <div class="box"><span class="v">4-6s</span><span class="k">per turn, human path</span></div>
 </div>
 
+<figure>
+<svg viewBox="0 0 760 375" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Call duration against number of negotiation turns"><title>Call duration against number of negotiation turns</title><text x="20" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">The saving grows with how much the agents have to settle</text><text x="20" y="46" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">modelled from the measured costs: 5 s a voice turn, one ~3 s JSON exchange</text><line x1="70" y1="228" x2="710" y2="228" stroke="#2e3a4d" stroke-width="1"/><text x="58" y="228" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">0 s</text><line x1="70" y1="153" x2="710" y2="153" stroke="#2e3a4d" stroke-width="1"/><text x="58" y="153" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">35 s</text><line x1="70" y1="78" x2="710" y2="78" stroke="#2e3a4d" stroke-width="1"/><text x="58" y="78" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">70 s</text><polyline points="70.0,174.4 230.0,153.0 390.0,131.6 550.0,110.1 710.0,88.7" fill="none" stroke="#4f7fb8" stroke-width="2.5" stroke-linejoin="round"/><circle cx="710" cy="88.71428571428572" r="5" fill="#4f7fb8" stroke="#10151f" stroke-width="2"/><polyline points="70.0,189.4 230.0,189.4 390.0,189.4 550.0,189.4 710.0,189.4" fill="none" stroke="#b5790a" stroke-width="2.5" stroke-linejoin="round"/><circle cx="710" cy="189.42857142857144" r="5" fill="#b5790a" stroke="#10151f" stroke-width="2"/><text x="70" y="252" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">2</text><text x="230" y="252" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">4</text><text x="390" y="252" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">6</text><text x="550" y="252" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">8</text><text x="710" y="252" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">10</text><text x="700" y="72.71428571428572" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#dde3ec" text-anchor="end" dominant-baseline="middle">65 s</text><text x="700" y="173.42857142857144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#dde3ec" text-anchor="end" dominant-baseline="middle">18 s</text><text x="390" y="276" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">turns of negotiation</text><line x1="70" y1="64" x2="90" y2="64" stroke="#4f7fb8" stroke-width="3" stroke-linecap="round"/><text x="96" y="64" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#93a0b4" text-anchor="start" dominant-baseline="middle">all voice</text><line x1="201" y1="64" x2="221" y2="64" stroke="#b5790a" stroke-width="3" stroke-linecap="round"/><text x="227" y="64" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#93a0b4" text-anchor="start" dominant-baseline="middle">with the side-channel</text><text x="20" y="304" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Both paths pay for the spoken intro and outro, so a one-turn call saves</text><text x="20" y="325" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">almost nothing. The flat line is the point: a JSON exchange costs the same</text><text x="20" y="346" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">whether the agents settle one thing or ten.</text></svg>
+<figcaption>A one-turn call saves almost nothing. Everything after that is free.</figcaption>
+</figure>
+
 <p>Middle number's the one that matters. Everything the two agents actually need
 to settle happens in a single round trip over a WebSocket, instead of n turns at
-four to six seconds each. The saving grows with how much they've got to say.</p>
+four to six seconds each. Savings grow with how much they've got to say.</p>
 
 <h2>The human path is the real test</h2>
 
@@ -124,7 +128,7 @@ anything else was attempted.</p>
 
 <div class="callout warn">
 <span class="label">Where this gets sharp</span>
-The fallback can't be a timeout the caller can hear. Someone who says "hello?"
+That fallback can't be a timeout the caller can hear. Someone who says "hello?"
 into two seconds of tones has already had a bad experience, whatever happens
 next. So the probe has to be short enough to hide inside a normal greeting,
 which puts a hard ceiling on how elaborate the handshake gets.
@@ -167,7 +171,7 @@ token", hopeless for anything richer. A capability exchange — which schema
 version, which codecs — belongs on the data channel right after pairing, not in
 tones.</p>
 
-<p>The broker is a soft centralisation. Pairing gets discovered in-band, but
+<p>My broker is a soft centralisation. Pairing gets discovered in-band, but
 token resolution still goes through a known endpoint, and fully peer-to-peer
 discovery is the honest end state. I'm not sure yet what that looks like without
 reinventing a directory.</p>

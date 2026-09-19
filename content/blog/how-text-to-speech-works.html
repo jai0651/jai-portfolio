@@ -4,37 +4,19 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>How text to speech actually works: durations, attention, vocoders</title>
-<meta name="description" content="A build guide to speech synthesis: why the acoustic model has to invent durations, the four tricks that make attention train, why Griffin-Lim is a ceiling, and how to choose a neural vocoder." />
+<meta name="description" content="A build guide to speech synthesis: why the acoustic model has to invent durations, the four tricks that make attention train, why Griffin-Lim is a ceiling no amount of data can lift, and how every generation of TTS research kills one specific Tacotron failure." />
 <meta name="date" content="2026-06-06" />
 <meta name="tags" content="text to speech, tts, vocoder, speech synthesis, pytorch" />
 </head>
 <body>
 <main>
 
-<p>Speech synthesis splits cleanly into two problems that fail in completely
-different ways, and most of the confusion I see probably comes from treating them as one.
-This walks through both: how text becomes a spectrogram, how a spectrogram
-becomes sound, and which decisions at each stage actually determine whether the
-output is intelligible.</p>
-
-<figure>
-<svg viewBox="0 0 780 306" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Text to speech in two stages: acoustic model then vocoder"><title>Text to speech in two stages: acoustic model then vocoder</title><rect x="150" y="20" width="460" height="58" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="380" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">"the old man's eyes"</text><text x="380" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">19 characters</text><line x1="380" y1="82" x2="380" y2="113" stroke="#d99e2b" stroke-width="2.5"/><path d="M380 122 L374 111 L386 111 Z" fill="#d99e2b"/><text x="396" y="102" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">acoustic model  ·  learned</text><rect x="150" y="126" width="460" height="58" rx="10" fill="#161d29" stroke="#f0b429" stroke-width="2"/><text x="380" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">log-mel spectrogram</text><text x="380" y="168" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">T × 80</text><text x="624" y="155" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">~250 frames</text><text x="624" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">who decides T?</text><line x1="380" y1="188" x2="380" y2="219" stroke="#d99e2b" stroke-width="2.5"/><path d="M380 228 L374 217 L386 217 Z" fill="#d99e2b"/><text x="396" y="208" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">vocoder  ·  signal processing</text><rect x="150" y="232" width="460" height="58" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="380" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">waveform @ 16 kHz</text><text x="380" y="274" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">~40,000 samples</text><text x="20" y="155" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#7aa2d8" text-anchor="start" dominant-baseline="middle">sequence</text><text x="20" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#7aa2d8" text-anchor="start" dominant-baseline="middle">problem</text><text x="20" y="261" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#5ec27e" text-anchor="start" dominant-baseline="middle">signal</text><text x="20" y="282" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#5ec27e" text-anchor="start" dominant-baseline="middle">problem</text></svg>
-<figcaption>The seam between the two halves is the log-mel spectrogram.</figcaption>
-</figure>
-
-<p>Text to mel is a sequence problem: durations, prosody, pronunciation. Mel to
-waveform is a signal problem: inverting a transform that threw information away.
-Modern end-to-end systems fuse the two for quality, but you can't see why fusing
-helps until you've felt the seam, so build them separately first.</p>
-
-<h2>Why synthesis is harder than recognition</h2>
-
-<p>If you've built a recognizer, you've met the alignment problem: 400 audio
-frames, three characters, and nothing saying which frames belong to which
+<p>If you've built a speech recognizer you've met the alignment problem: 400
+audio frames, three characters, and nothing saying which frames belong to which
 character. CTC handles it by refusing to choose, summing over every possible
 alignment.</p>
 
-<p>Run it backwards and that escape route disappears.</p>
+<p>Run the same problem backwards and that escape route disappears.</p>
 
 <div class="tablewrap">
 <table>
@@ -48,24 +30,36 @@ alignment.</p>
 </table>
 </div>
 
-<p>That last row is the whole difficulty. CTC stays agnostic because it only
-scores a target you already hold. A synthesizer produces the output, so at every
-step it commits: is the "o" in "go" finished, or does it hold another 40 ms? Get
-that wrong repeatedly and you don't get a slightly wrong transcript. You get
-speech that stutters, skips syllables, or never stops.</p>
+<p>That last row is the difficulty. CTC can stay agnostic because it only ever
+scores a target you already hold. A synthesiser produces the output, so at every
+step it has to commit: is the "o" in "go" finished, or does it hold for another
+40 ms? Get that wrong repeatedly and you don't get a slightly wrong transcript.
+You get speech that stutters, skips a syllable, or never stops.</p>
+
+<figure>
+<svg viewBox="0 0 780 306" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Text to speech in two stages: acoustic model then vocoder"><title>Text to speech in two stages: acoustic model then vocoder</title><rect x="150" y="20" width="460" height="58" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="380" y="38" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">"the old man's eyes"</text><text x="380" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">19 characters</text><line x1="380" y1="82" x2="380" y2="113" stroke="#d99e2b" stroke-width="2.5"/><path d="M380 122 L374 111 L386 111 Z" fill="#d99e2b"/><text x="396" y="102" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">acoustic model  ·  learned</text><rect x="150" y="126" width="460" height="58" rx="10" fill="#161d29" stroke="#f0b429" stroke-width="2"/><text x="380" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">log-mel spectrogram</text><text x="380" y="168" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">T × 80</text><text x="624" y="155" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">~250 frames</text><text x="624" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">who decides T?</text><line x1="380" y1="188" x2="380" y2="219" stroke="#d99e2b" stroke-width="2.5"/><path d="M380 228 L374 217 L386 217 Z" fill="#d99e2b"/><text x="396" y="208" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">vocoder  ·  signal processing</text><rect x="150" y="232" width="460" height="58" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="380" y="250" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">waveform @ 16 kHz</text><text x="380" y="274" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">~40,000 samples</text><text x="20" y="155" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#7aa2d8" text-anchor="start" dominant-baseline="middle">sequence</text><text x="20" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#7aa2d8" text-anchor="start" dominant-baseline="middle">problem</text><text x="20" y="261" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#5ec27e" text-anchor="start" dominant-baseline="middle">signal</text><text x="20" y="282" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#5ec27e" text-anchor="start" dominant-baseline="middle">problem</text></svg>
+<figcaption>Two halves that fail differently and improve independently. Build them separately first.</figcaption>
+</figure>
+
+<p>Text to mel is a sequence problem: durations, prosody, pronunciation. Mel to
+waveform is a signal problem: inverting a transform that threw information away.
+Modern systems fuse them for quality, but you can't see why fusing helps until
+you've felt the seam.</p>
 
 <h2>The acoustic model, and the four tricks it needs</h2>
 
 <p>Tacotron's answer is to generate mel frames one step at a time, using
 attention over the text at each step to answer "which character am I on?". The
-attention <em>is</em> the alignment, built as it goes.</p>
+attention <em>is</em> the alignment, built as it goes instead of discovered
+after the fact.</p>
 
 <figure>
 <svg viewBox="0 0 760 348" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The five operations in one Tacotron decoder step"><title>The five operations in one Tacotron decoder step</title><circle cx="42" cy="62" r="16" fill="#1d2534" stroke="#2e3a4d" stroke-width="2"/><text x="42" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">1</text><text x="74" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">prenet(previous frame)</text><text x="74" y="75" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">what did I just say?</text><line x1="42" y1="80" x2="42" y2="102" stroke="#2e3a4d" stroke-width="1.5"/><circle cx="42" cy="120" r="16" fill="#1d2534" stroke="#f0b429" stroke-width="2"/><text x="42" y="120" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#f0b429" text-anchor="middle" dominant-baseline="middle">2</text><text x="74" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">attention over the text</text><text x="74" y="133" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">which characters am I on?</text><line x1="42" y1="138" x2="42" y2="160" stroke="#2e3a4d" stroke-width="1.5"/><circle cx="42" cy="178" r="16" fill="#1d2534" stroke="#2e3a4d" stroke-width="2"/><text x="42" y="178" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">3</text><text x="74" y="170" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">GRU state update</text><text x="74" y="191" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">remember where I am</text><line x1="42" y1="196" x2="42" y2="218" stroke="#2e3a4d" stroke-width="1.5"/><circle cx="42" cy="236" r="16" fill="#1d2534" stroke="#2e3a4d" stroke-width="2"/><text x="42" y="236" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">4</text><text x="74" y="228" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">project → r × 80</text><text x="74" y="249" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">paint the next mel slice</text><line x1="42" y1="254" x2="42" y2="276" stroke="#2e3a4d" stroke-width="1.5"/><circle cx="42" cy="294" r="16" fill="#1d2534" stroke="#2e3a4d" stroke-width="2"/><text x="42" y="294" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">5</text><text x="74" y="286" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">stop head → P(done)</text><text x="74" y="307" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">am I finished talking?</text><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="start" dominant-baseline="middle">every decoder step  (= r mel frames)</text><line x1="430" y1="146" x2="548" y2="146" stroke="#f0b429" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.7"/><text x="558" y="137" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0b429" text-anchor="start" dominant-baseline="middle">the alignment,</text><text x="558" y="158" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0b429" text-anchor="start" dominant-baseline="middle">built as it goes</text></svg>
 <figcaption>Attention is step 2, and it is the whole ballgame.</figcaption>
 </figure>
 
-<p>Four things make that trainable, and you need all four:</p>
+<p>Four things make that trainable. You probably need all four, and I know
+because I removed one.</p>
 
 <div class="tablewrap">
 <table>
@@ -73,159 +67,221 @@ attention <em>is</em> the alignment, built as it goes.</p>
 <tbody>
 <tr><td>Teacher forcing</td><td>feed the true previous frame during training</td><td>early training compounds its own garbage</td></tr>
 <tr><td>Prenet dropout, on at inference too</td><td>stops the decoder copying the previous frame forward</td><td>fluent, confident mumble, uncorrelated with the text</td></tr>
-<tr><td>Reduction factor r=2</td><td>predict 2 frames per step</td><td>attention takes much longer to form</td></tr>
+<tr><td>Reduction factor r=2</td><td>predict 2 frames per step</td><td>attention takes far longer to form</td></tr>
 <tr><td>Location-sensitive attention</td><td>previous alignment through a conv into the scorer</td><td>stutters and skips characters</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>The second one deserves a note because it looks like a bug you'd fix. Leaving
-dropout active at inference is deliberate: the previous-frame path is so
-informative that the decoder will happily copy it forward and ignore the text
-entirely. Turn it off and you get speech that sounds completely fluent and has
-nothing to do with what you asked for.</p>
+<p>Number two deserves a paragraph, because it looks like a bug you'd fix in review. Leaving dropout active at inference is deliberate. The previous-frame
+path is so informative that the decoder will happily copy it forward and ignore
+the text entirely, and what comes out is speech that sounds completely fluent
+and has nothing to do with what you asked for. It's a genuinely unsettling
+thing to listen to.</p>
 
 <h2>Watch the alignment map, not the loss</h2>
 
-<p>This is the single most useful thing I can tell you about training a
-synthesizer.</p>
+<p>This is the most useful thing I can tell you about training a synthesiser.</p>
 
 <p>Mel L1 loss falls early just by predicting blurry average speech. Mine went
-0.81 to 0.24, smoothly, over 3,000 steps — the shape of curve you screenshot and
-feel good about — while the model learned essentially nothing. The free-running
-attention map was a smear with no diagonal. Generation cut out at 2.2 seconds on
-an 82-character sentence.</p>
+0.81 to 0.24, smoothly, over 3,000 steps. That's the shape of curve you
+screenshot and feel good about. The model had learned essentially nothing: the
+free-running attention map was a smear with no diagonal in it, and generation
+cut out at 2.2 seconds on an 82-character sentence.</p>
 
-<p>A diagonal forming in the attention map means it's working. A smear means it
-isn't. The loss cannot distinguish those two states, so plot the alignment every
-few hundred steps and look at it.</p>
+<p>A diagonal forming means it's working. A smear means it's not, and maybe
+never will. Your loss can't distinguish those two states, so plot the alignment
+every few hundred steps and actually look at it.</p>
 
-<p>If the diagonal won't form, the fix usually isn't more data. Maybe eventually, but not yet. Guided attention
-adds a penalty <code>mean(A · W)</code> where
+<p>If the diagonal won't form, the fix usually isn't more data. Guided
+attention adds a penalty <code>mean(A · W)</code> where
 <code>W[t,n] = 1 − exp(−(n/N − t/T)² / 2g²)</code>, taxing attention mass far
-from the diagonal and leaving mass near it free. It's a prior saying "time moves
-forward", not a constraint, and with enough data you'd drop it. With 19 training
-utterances it took alignment from never forming to forming in hundreds of
-steps.</p>
+from the diagonal and leaving mass near it free. It's a prior saying "time
+moves forward", not a constraint, and with enough data you would drop it. With
+19 training utterances it took alignment from never forming to forming in
+hundreds of steps.</p>
 
-<h2>Scoring it without a listening panel</h2>
+<h2>Judge it with the recognizer you already built</h2>
 
-<p>Mel L1 says nothing about intelligibility. If you've already built a
-recognizer, use it: transcribe the synthesizer's output and measure character
-error against the text it was asked to say.</p>
+<p>Mel L1 says nothing about intelligibility, and I don't have a listening
+panel. A generative model can hit a good training loss while being unusable,
+because the loss measures frame-level regression and not the property you care
+about. So transcribe the synthesiser's own output and measure character error
+against the text it was asked to say.</p>
 
-<p>Build that judge early, because quality oscillates while the loss slides steadily downward. Mine swung between 0.96 and 0.61 character error across a run with
-three separate regressions, and picked step 8,000 of 10,000. Taking the final
-checkpoint would have shipped something clearly worse for no reason except that
-it came last.</p>
+<p>Build that judge early. Free-running quality oscillates between checkpoints
+while the training loss sits flat: mine swung between 0.96 and 0.61 character
+error with three separate regressions, and the judge picked step 8,000 of
+10,000. Production TTS teams do exactly this, ASR-based intelligibility evals
+alongside human ratings. Last isn't best for generative models.</p>
 
-<h2>Griffin-Lim is a ceiling, and you should plan to leave it</h2>
+<h2>Two clever ideas that measured worse</h2>
 
-<p>Computing a log-mel throws the phase away. Griffin-Lim recovers a phase by
-exploiting frame overlap: guess, inverse transform, re-measure, keep your
-magnitude, repeat about 60 times. After that, magnitude and phase are
-self-consistent.</p>
+<p>When attention stalls at inference, the obvious fix is restricting it to a
+window around wherever it was last. I implemented that.</p>
 
-<p>Self-consistent isn't correct. Many phase fields are consistent with the same
-magnitude spectrogram, and the one Griffin-Lim converges to generally isn't the
-one a speaker produced. That mismatch is the phasey, metallic, slightly
-underwater quality you hear in every Griffin-Lim sample.</p>
+<figure>
+<svg viewBox="0 0 760 235" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Attention windowing at inference doubled character error"><title>Attention windowing at inference doubled character error</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Character error after the obvious fix for attention stalls</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">judged by transcribing the synthesiser's own output · best sentence</text><text x="206" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">as trained</text><path d="M220 62 h186.3846153846154 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-186.3846153846154 z" fill="#b5790a"/><text x="422.38461538461536" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.22</text><text x="206" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">+ attention windowing</text><path d="M220 108 h376.7692307692308 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-376.7692307692308 z" fill="#4f7fb8"/><text x="612.7692307692307" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.44</text><text x="612.7692307692307" y="138" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">twice the error</text><text x="20" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">The model trained on a full softmax over the whole text. Renormalising</text><text x="20" y="193" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">inside a window at decode time hands it context vectors it has never seen.</text><text x="20" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Exposure-bias fixes belong in training.</text></svg>
+<figcaption>Measure the clever idea before keeping it. This one took half an hour to write and doubled the error.</figcaption>
+</figure>
+
+<p>Your model trained on a full softmax over the whole text, so renormalising
+inside a window at decode time hands it context vectors of a kind it has never
+seen. Exposure-bias fixes belong in training, not decoding.</p>
+
+<p>What I shipped instead were stop-head guards: require two consecutive stop
+votes <em>and</em> about five frames per input character before stopping. That
+matters more than it sounds, because padded batches make "done" frames
+outnumber "still talking" frames for short utterances, and one false positive
+truncates mid-word.</p>
+
+<p>My second bad idea was hardware. That decoder is a Python loop over timesteps, each doing small tensor operations, and on Apple's MPS backend it ran
+13× slower than on CPU. Per-dispatch overhead dominates when the ops are tiny
+and strictly sequential. Accelerators buy throughput, not latency on small
+sequential work, and a voice agent is mostly small sequential work.</p>
+
+<h2>What the mel threw away</h2>
+
+<p>Your vocoder has to reinvent two things the feature pipeline destroyed.</p>
+
+<p><strong>Frequency detail.</strong> 257 FFT bins were pooled into 80
+triangles. Least-squares undo: multiply by the filterbank's pseudo-inverse and clamp the negatives.</p>
+
+<p><strong>Phase.</strong> Your power spectrum kept magnitudes and threw away every phase angle, but an inverse FFT needs complex numbers. Griffin-Lim (1984)
+exploits the redundancy of overlapping frames, 400-sample frames at a 160 hop
+giving 60% overlap: iterate inverse STFT, forward STFT, keep your magnitude,
+adopt the re-measured phase, and the phases get squeezed toward mutual
+consistency. Measured here, spectral convergence goes 0.235 to 0.112 over 60
+iterations.</p>
+
+<p>Self-consistent isn't correct, though. Many phase fields are consistent with
+the same magnitude spectrogram, and the one Griffin-Lim lands on generally is
+not the one a speaker produced. That mismatch is the phasey, metallic, slightly
+underwater quality of everything it makes.</p>
 
 <div class="callout">
-<span class="label">Why this gap is different</span>
-Almost everywhere else in a speech stack, more data helps. Here it can't, at any
-quantity, because the limitation isn't in a learned component at all.
-Griffin-Lim has zero parameters. Train your acoustic model on ten thousand hours
-and the output is still phasey. If your synthesis sounds robotic, replace the
-vocoder before you collect more speech.
+<span class="label">Why this gap is different from every other one</span>
+Almost everywhere else in a speech stack, more data helps. Here it can't, at
+any quantity, because the limitation isn't in a learned component. Griffin-Lim
+has zero parameters. Train your acoustic model on ten thousand hours and the
+output is still phasey. If your synthesis sounds robotic, replace the vocoder
+before you collect more speech.
 </div>
 
 <h2>Choosing a vocoder</h2>
 
-<div class="tablewrap">
-<table>
-<thead><tr><th></th><th>Time domain (HiFi-GAN)</th><th>Spectral (Vocos, iSTFTNet)</th></tr></thead>
-<tbody>
-<tr><td>predicts</td><td>every output sample</td><td>magnitude and phase per frame</td></tr>
-<tr><td>upsamples via</td><td>transposed convolutions, 160× total</td><td>one exact inverse STFT</td></tr>
-<tr><td>cost per second</td><td>16,000 predictions</td><td>100 frames</td></tr>
-<tr><td>needs a GAN?</td><td>yes, or it sounds muffled</td><td>no, good without and better with</td></tr>
-</tbody>
-</table>
-</div>
+<figure>
+<svg viewBox="0 0 760 214" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Predictions per second of audio for two vocoder families"><title>Predictions per second of audio for two vocoder families</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Predictions per second of audio</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">the inverse STFT has done the upsampling exactly, and for free, since 1977</text><text x="236" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">HiFi-GAN (time domain)</text><path d="M250 62 h369.3333333333333 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-369.3333333333333 z" fill="#b5790a"/><text x="635.3333333333333" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">16,000</text><text x="635.3333333333333" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">one prediction per output sample</text><text x="236" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">Vocos style (spectral)</text><path d="M250 108 h-1.6666666666666665 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h--1.6666666666666665 z" fill="#4f7fb8"/><text x="264.33333333333337" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">100</text><text x="264.33333333333337" y="138" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">one per STFT frame, then an exact inverse</text><text x="20" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Two orders of magnitude less compute, and that matters when the target is a</text><text x="20" y="193" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">laptop CPU inside a turn-taking budget.</text></svg>
+<figcaption>Making a waveform was never the hard part. Knowing the phase was.</figcaption>
+</figure>
 
-<p>The insight behind the spectral family is that making a waveform was never
-the hard part. The inverse STFT does that exactly, for free, and has done since
-1977. Knowing the phase was the hard part. So predict the phase, run the exact
-inverse, and stop paying a network to rediscover arithmetic.</p>
-
-<p>For anything targeting a laptop CPU inside a turn-taking latency budget, I'd take the spectral one. Two orders of magnitude less compute per second of audio, and
-it clears Griffin-Lim trained on a multi-resolution STFT loss alone, so
-adversarial training becomes a later upgrade instead of a prerequisite.</p>
+<p>What the spectral family noticed is that the inverse STFT already does the upsampling, exactly and for free, and has since 1977. So predict magnitude
+and phase per frame, run the exact inverse, and stop paying a network to
+rediscover arithmetic.</p>
 
 <figure>
 <svg viewBox="0 0 760 490" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Spectral vocoder architecture"><title>Spectral vocoder architecture</title><rect x="60" y="20" width="640" height="44" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="380" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">log-mel  (B, T, 80)</text><line x1="380" y1="64" x2="380" y2="73" stroke="#2e3a4d" stroke-width="2.5"/><path d="M380 82 L374 71 L386 71 Z" fill="#2e3a4d"/><rect x="60" y="82" width="640" height="44" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="380" y="104" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">Conv1d(80 → d, k=7) + LayerNorm</text><line x1="380" y1="126" x2="380" y2="135" stroke="#2e3a4d" stroke-width="2.5"/><path d="M380 144 L374 133 L386 133 Z" fill="#2e3a4d"/><rect x="60" y="144" width="640" height="50" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="380" y="158" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">N × ConvNeXt block</text><text x="380" y="182" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">depthwise k=7 → LN → Linear → GELU → Linear</text><line x1="380" y1="194" x2="380" y2="197" stroke="#2e3a4d" stroke-width="2.5"/><path d="M380 206 L374 195 L386 195 Z" fill="#2e3a4d"/><rect x="60" y="206" width="640" height="50" rx="10" fill="#161d29" stroke="#f0b429" stroke-width="2"/><text x="380" y="220" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">Linear(d → 2 · 257)</text><text x="380" y="244" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">split: log-magnitude │ phase angle</text><line x1="380" y1="256" x2="380" y2="259" stroke="#2e3a4d" stroke-width="2.5"/><path d="M380 268 L374 257 L386 257 Z" fill="#2e3a4d"/><rect x="60" y="268" width="640" height="44" rx="10" fill="#161d29" stroke="#5ec27e" stroke-width="2"/><text x="380" y="290" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">S = exp(mag) · e^(i·phase)</text><line x1="380" y1="312" x2="380" y2="321" stroke="#2e3a4d" stroke-width="2.5"/><path d="M380 330 L374 319 L386 319 Z" fill="#2e3a4d"/><rect x="60" y="330" width="640" height="50" rx="10" fill="#161d29" stroke="#5ec27e" stroke-width="2"/><text x="380" y="344" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">exact inverse STFT</text><text x="380" y="368" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">overlap-add, nothing learned</text><line x1="380" y1="380" x2="380" y2="383" stroke="#2e3a4d" stroke-width="2.5"/><path d="M380 392 L374 381 L386 381 Z" fill="#2e3a4d"/><rect x="60" y="392" width="640" height="44" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="380" y="414" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">waveform</text><text x="380" y="466" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#d99e2b" text-anchor="middle" dominant-baseline="middle">no attention anywhere: a vocoder needs tens of milliseconds, not a sentence</text></svg>
-<figcaption>Predict the phase; the inverse STFT is exact and free.</figcaption>
+<figcaption>No attention anywhere. A vocoder needs tens of milliseconds of context to place a glottal pulse, not a sentence.</figcaption>
 </figure>
 
-<p>No attention anywhere in it. A vocoder needs a receptive field of a few tens
-of milliseconds, enough to place a glottal pulse, not a sentence. Convolutions
-supply that far more cheaply, and that's probably why every production vocoder you'll meet is convolutional.</p>
+<p>Match its STFT grid to the one your features already use, n_fft 512, window
+400, hop 160 in my case, and the mels your acoustic model emits drop straight in
+with no retraining. That agreement isn't a detail: reusing a 512/256
+overlap-add shell for something trained at 512/128 looked harmless and took a
+19 dB signal-to-noise ratio down to 6.</p>
 
-<p>Match its STFT grid to the one your features already use — n_fft 512, window
-400, hop 160 in my case — and the mels your acoustic model emits drop straight
-in with no retraining.</p>
+<p>One implementation note, since this is the detail everyone gets wrong first.
+If you hand-build the inverse STFT as overlap-add you need the synthesis-window
+normalisation, dividing by the sum of squared windows. Skip it and you get
+amplitude ripple at the frame rate that sounds like tremolo.</p>
 
 <h2>Pick a metric that can see what you care about</h2>
 
 <p>I scored my neural vocoder against Griffin-Lim on multi-resolution STFT
 distance. Griffin-Lim won.</p>
 
-<p>It won because multi-resolution STFT is a magnitude metric, and magnitude
-consistency is literally the objective Griffin-Lim optimises. I'd picked a
-scoring function that measures the one thing the baseline is built to maximise.
-Adding SI-SDR, time-domain and so phase-sensitive, flipped it immediately: the neural model was 5.4 dB better.</p>
+<figure>
+<svg viewBox="0 0 760 319" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The same vocoders judged by a magnitude metric and a phase-sensitive one"><title>The same vocoders judged by a magnitude metric and a phase-sensitive one</title><text x="20" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">The same two vocoders, scored two ways</text><text x="20" y="46" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">one metric sees only magnitude, the other also sees phase</text><rect x="20" y="70" width="350" height="150" rx="10" fill="#161d29" stroke="#4f7fb8" stroke-width="2"/><text x="195" y="100" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">multi-resolution STFT</text><text x="195" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">magnitude only</text><line x1="44" y1="144" x2="346" y2="144" stroke="#2e3a4d" stroke-width="1"/><text x="195" y="170" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="600" fill="#4f7fb8" text-anchor="middle" dominant-baseline="middle">Griffin-Lim wins</text><text x="195" y="196" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">and it is not close</text><rect x="390" y="70" width="350" height="150" rx="10" fill="#161d29" stroke="#b5790a" stroke-width="2"/><text x="565" y="100" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">SI-SDR</text><text x="565" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">time domain, phase-sensitive</text><line x1="414" y1="144" x2="716" y2="144" stroke="#2e3a4d" stroke-width="1"/><text x="565" y="170" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="600" fill="#b5790a" text-anchor="middle" dominant-baseline="middle">neural wins</text><text x="565" y="196" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">by 5.4 dB</text><text x="20" y="248" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Magnitude consistency is literally the objective Griffin-Lim optimises. I</text><text x="20" y="269" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">picked a metric that measures the one thing my baseline is built to</text><text x="20" y="290" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">maximise, then believed the answer.</text></svg>
+<figcaption>Before trusting a comparison, ask whether your metric measures the thing your baseline optimises.</figcaption>
+</figure>
 
-<p>Before trusting any comparison, ask whether your metric measures the thing
-your baseline optimises. If it does, you've built a tautology.</p>
+<p>Both numbers were correct. Only one was measuring whether the output sounds
+like a person.</p>
+
+<h2>Where your model sits in the lineage</h2>
+
+<p>Once you've built Tacotron and felt its two specific pain points, every
+generation of TTS research becomes legible as "which of these does this kill?"</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Era</th><th>Model</th><th>The move</th></tr></thead>
+<tbody>
+<tr><td>2017</td><td>Tacotron 2</td><td>what you just built, scaled: LSTM, location attention, WaveNet vocoder</td></tr>
+<tr><td>2019</td><td>FastSpeech 1/2</td><td>kill autoregression. Predict every phoneme's duration explicitly and generate all frames in parallel: no stop token, no stalls, 100× faster, at the cost of needing alignments from a teacher</td></tr>
+<tr><td>2021</td><td>VITS</td><td>fuse the stages, text to waveform end to end, learns its own alignment and removes the mel seam entirely</td></tr>
+<tr><td>2023</td><td>StyleTTS 2</td><td>style diffusion plus adversarial training with a speech-LM judge</td></tr>
+<tr><td>2024</td><td>Kokoro-82M</td><td>that recipe distilled to 82M params, CPU-realtime, near-SOTA naturalness at hobbyist cost</td></tr>
+<tr><td>frontier</td><td>audio LMs</td><td>treat speech as codec tokens and let an LLM generate them: zero-shot cloning, expressive, heavier, less controllable</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Trace your own two pain points through that table. Stop-token and stall problems die with explicit durations at FastSpeech. The Griffin-Lim robotic
+residue dies with learned vocoders and end-to-end training. That's exactly why
+building Tacotron first is the right way to learn this field, even though you
+would never ship it.</p>
+
+<h2>Streaming, briefly</h2>
+
+<p>Both my engines yield audio per sentence, so time-to-first-audio is one
+sentence's synthesis, later sentences render while earlier ones play, and
+barge-in abandons the generator wasting at most one sentence. Production APIs
+stream at finer grain with chunked vocoding inside a sentence, around 100 ms of
+audio at a time. Per-sentence is probably enough to feel responsive, and it's a
+lot simpler.</p>
 
 <h2>If you want it in your own voice</h2>
 
 <p>Cloning is mostly a data-collection problem, and it's the one step here you
 can't parallelise, buy or download. An hour of speech is around 900 takes. At
 ten seconds of friction per take that's two and a half hours of pure overhead,
-which is how most voice datasets end up abandoned.</p>
+and probably how most voice datasets end up abandoned.</p>
 
-<p>So build the recording tool properly, and design it to remove decisions:</p>
+<p>So the recording tool is the artifact worth building, designed to remove
+decisions:</p>
 
 <ul>
 <li><strong>Hands free.</strong> Press return, read the sentence, stop talking,
-and your VAD ends the take. No second keypress across 900 sentences.</li>
+and your VAD ends the take. Your hands never leave the return key for 900
+sentences.</li>
 <li><strong>Check every take before it counts.</strong> Clipping, noise floor,
 silence padding, and whether a transcription matches the prompt. Catching a bad
 take costs five seconds now and a day after training.</li>
 <li><strong>Resumable at any instant</strong>, because nobody records 900
 sentences in one sitting.</li>
 <li><strong>Balance the corpus by greedy n-gram coverage</strong> when choosing
-prompts, so an hour of speech covers the sounds you need instead of the sentences you happened to pick.</li>
+prompts, so an hour of speech covers the sounds you need instead of the
+sentences you happened to pick.</li>
 </ul>
 
 <h2>Verifying a voice is a voice</h2>
 
-<p>If you go further and build speaker embeddings, the important design decision
+<p>If you go further into speaker embeddings, the design decision that matters
 is that the training objective and the reported metric are deliberately
 different tasks. You train a classifier over known speakers, but you report
 equal error rate on speakers the model has never heard, scored by cosine
 distance on a fixed trial list. Training accuracy hitting 100% only means it
 memorised 32 voices.</p>
 
-<p>And check your confidence interval before believing any A/B. A held-out split
-of 8 speakers gives an equal error rate with a bootstrap interval several points
-wide — wider than most of the differences you'd want to test, like angular
-margin against plain softmax. Print the interval, the median across evaluations
-and the best checkpoint separately, so they can't be quietly confused.</p>
+<p>Then check your confidence interval before believing any A/B. A held-out
+split of 8 speakers gives an equal error rate with a bootstrap interval several
+points wide, wider than most of the differences you would want to test, like
+angular margin against plain softmax. Print the interval, the median across
+evaluations and the best checkpoint separately, so they can't be quietly
+confused.</p>
 
-<p>On a split that small, the honest answer to "does the angular margin help?" is
+<p>On a split that small the honest answer to "does the angular margin help?" is
 that the experiment can't tell you. Knowing which of your results are real is
 the part that transfers to the next project.</p>
 
