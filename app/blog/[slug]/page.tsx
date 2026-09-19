@@ -6,6 +6,7 @@ import Section from "@/components/Section";
 import LikeButton from "@/components/blog/LikeButton";
 import ViewTracker from "@/components/blog/ViewTracker";
 import { formatDate, getAdjacentPosts, getPostBySlug, getPublishedSlugs } from "@/lib/blog";
+import { SITE, absolute } from "@/lib/site";
 
 /*
  * Posts are prerendered at build and then held in the ISR cache, which is what
@@ -29,9 +30,35 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const post = await getPostBySlug(slug);
   if (!post) return {};
+
+  const url = `/blog/${slug}`;
+  const published = post.publishedAt?.toISOString();
+
   return {
-    title: `${post.title} — Jai Shankar`,
+    title: post.title,
     description: post.summary ?? undefined,
+    keywords: post.tags,
+    authors: [{ name: SITE.author.name, url: SITE.author.url }],
+    // Canonical matters more than usual here: the same post is reachable with
+    // and without a trailing slash, and via the www and apex hosts.
+    alternates: { canonical: url },
+    openGraph: {
+      type: "article",
+      url,
+      title: post.title,
+      description: post.summary ?? undefined,
+      siteName: SITE.name,
+      locale: SITE.locale,
+      publishedTime: published,
+      modifiedTime: post.updatedAt?.toISOString() ?? published,
+      authors: [SITE.author.url],
+      tags: post.tags,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: post.title,
+      description: post.summary ?? undefined,
+    },
   };
 }
 
@@ -42,8 +69,37 @@ export default async function BlogPostPage({ params }: Props) {
 
   const { newer, older } = await getAdjacentPosts(slug);
 
+  const published = post.publishedAt?.toISOString();
+
   return (
     <>
+      {/*
+        BlogPosting is what makes a result show a date and an author instead of
+        a bare link, and it is the shape most answer engines read when they
+        decide whether a page is a first-hand writeup or an aggregator copy.
+      */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "BlogPosting",
+            "@id": absolute(`/blog/${slug}`),
+            mainEntityOfPage: { "@type": "WebPage", "@id": absolute(`/blog/${slug}`) },
+            headline: post.title,
+            description: post.summary ?? undefined,
+            datePublished: published,
+            dateModified: post.updatedAt?.toISOString() ?? published,
+            author: { "@type": "Person", name: SITE.author.name, url: SITE.author.url },
+            publisher: { "@type": "Person", name: SITE.author.name, url: SITE.author.url },
+            keywords: post.tags.join(", "),
+            wordCount: post.readingMinutes * 200,
+            timeRequired: `PT${post.readingMinutes}M`,
+            inLanguage: "en-GB",
+            isAccessibleForFree: true,
+          }),
+        }}
+      />
       <ViewTracker slug={slug} />
 
       <Section tone="hero" space="md" innerClassName="max-w-[860px]">

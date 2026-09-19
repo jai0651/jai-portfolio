@@ -12,9 +12,17 @@ import { formatDate, getPublishedPosts } from "@/lib/blog";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Blog — Jai Shankar",
+  title: "Blog",
   description:
-    "Technical writeups on voice AI, speech models, LLM agents and the systems underneath them.",
+    "Technical writeups on voice AI, speech models built from scratch, multimodal retrieval and local agents, with the measurements and the failures.",
+  alternates: { canonical: "/blog" },
+  openGraph: {
+    type: "website",
+    url: "/blog",
+    title: "Blog — Jai Shankar",
+    description:
+      "Technical writeups on voice AI, speech models built from scratch, multimodal retrieval and local agents.",
+  },
 };
 
 export default async function BlogIndex() {

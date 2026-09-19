@@ -21,6 +21,12 @@ async function requireAdmin() {
 function refreshBlogCache(slug?: string) {
   revalidatePath("/blog");
   if (slug) revalidatePath(`/blog/${slug}`);
+  // The discovery surface is derived from the same posts, so it goes stale in
+  // exactly the same moment. A sitemap that lags a publish by an hour is a
+  // crawl budget spent on a 404.
+  revalidatePath("/sitemap.xml");
+  revalidatePath("/feed.xml");
+  revalidatePath("/llms.txt");
 }
 
 /** Admin listing — includes drafts and metrics. */
