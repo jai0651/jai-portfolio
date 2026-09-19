@@ -3,26 +3,35 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Four different problems sit between a microphone and a transcript</title>
-<meta name="description" content="The recognition half of a voice agent, built from scratch: a VAD that turns out to be a data problem, endpointing that needs no model at all, and a recognizer that quietly learned to say nothing." />
-<meta name="date" content="2026-09-12" />
+<title>My recognizer learned to say nothing at all</title>
+<meta name="description" content="Building the listening half of a voice agent in PyTorch. A VAD that was really a data problem, an endpointer with no model in it, and a CTC collapse that neither the loss nor the error rate could see." />
+<meta name="date" content="2026-05-09" />
 <meta name="tags" content="speech, asr, ai engineering, pytorch, conformer" />
 </head>
 <body>
 <main>
 
-<p>I built a voice agent without calling anyone's API: noise suppression, voice
-activity detection, turn detection, speech recognition, and the pipeline that
-holds them together, each one written in PyTorch and each one sitting behind the
-same interface as the production model it is meant to be compared against.</p>
+<p>My speech recognizer found a way to score a perfectly respectable loss while
+emitting absolutely nothing.</p>
 
-<p>The models were never the point. They exist to be understood and then
-replaced. What I actually came away with is a catalogue of specific, measured
-failures, and most of them were not failures of machine learning. They were
-failures of measurement.</p>
+<p>CTC lets a model output a blank symbol at any frame it's unsure about. Mine
+worked out that blank on <em>every</em> frame is a safe answer with a finite
+loss, and settled there. 100% of frames blank. Output entropy 0.82 out of a
+possible 6.93. Greedy decoding returns the empty string, every time.</p>
 
-<p>This post covers the half of the loop that listens. A second post covers the
-half that talks.</p>
+<p>What makes that worth writing down isn't the bug. It's that both numbers I
+was watching were blind to it. The loss sat flat at a plausible value, which
+reads exactly like a plateau. Word error rate was pinned at 1.0, and that's
+what you'd see from a model that simply hasn't learned yet. So the instruments said
+"be patient" and I was patient, for longer than I'd like to admit.</p>
+
+<p>So the fix isn't a better loss curve, it's a different instrument. Log the
+fraction of frames that come out blank. One line, and it goes straight to 1.0 the
+moment the collapse starts.</p>
+
+<h2>Four problems in a row</h2>
+
+<p>Listening looks like one pipeline and really isn't.</p>
 
 <div class="diagram">   <span class="m">mic</span>
     │
@@ -32,141 +41,104 @@ half that talks.</p>
  <span class="m">"cleaner?"</span>  <span class="m">"speech?"</span>  <span class="m">"finished?"</span>  <span class="m">"what words?"</span>
     │         │          │           │
  <span class="g">OM-LSA</span>   <span class="g">conv net</span>  <span class="g">state machine</span>  <span class="g">Conformer</span>
- <span class="m">0 params</span>   <span class="m">55K</span>       <span class="m">no model</span>       <span class="m">28M</span>
+ <span class="m">0 params</span>   <span class="m">55K</span>       <span class="m">no model</span>       <span class="m">28M</span></div>
 
- <span class="w">Four boxes, four different kinds of problem.</span></div>
+<p>Denoising is signal processing. VAD is binary classification. Endpointing is
+policy and has no model in it anywhere. Recognition is sequence transduction
+with an alignment problem underneath. Every time I got properly stuck it was
+because I'd picked up the tool that belongs to the box next door.</p>
 
-<h2><span class="num">1</span>Four problems wearing one coat</h2>
+<h2>The VAD was a data problem wearing a model's clothes</h2>
 
-<p>It is tempting to read that row of boxes as one pipeline doing one job. It
-is not. Denoising is signal processing. VAD is binary classification.
-Endpointing is policy and contains no model at all. Recognition is sequence
-transduction with an alignment problem underneath it.</p>
+<p>My voice activity detector is 55,000 parameters, small enough that you can't
+really blame the architecture for anything. It was confidently wrong in the most
+ordinary situation there is: room noise, nobody talking, and it reported
+<code>P(speech) = 1.0</code>.</p>
 
-<p>Knowing which kind of problem you are looking at is most of knowing which
-tools apply, and every time I got stuck it was because I had reached for the
-tool that belonged to a neighbouring box.</p>
+<p>Same architecture, same training loop, fixed the training data, and that same
+input scores 0.04. Nothing was wrong with the model. What I'd shown it was
+wrong.</p>
 
-<h2><span class="num">2</span>The VAD is a data problem in a model's clothing</h2>
+<p>Cheapest thing I did on this project was writing the eval set before
+training anything: digital silence, mains hum, babble, speech recorded too
+quietly. Took ten minutes. It then decided which checkpoint shipped, because the
+best hard-case score was 0.806 at step 2750 while the final step of the run
+scored 0.699. Last isn't best, and nothing except a targeted eval set was ever
+going to tell me that.</p>
 
-<p>The voice activity detector is 55,000 parameters, which is small enough that
-you stop being able to blame the architecture. Mine was confidently wrong in the
-most ordinary condition there is: on room noise with nobody speaking, it
-reported <code>P(speech) = 1.0</code>.</p>
+<h2>The one box you shouldn't put a model in</h2>
 
-<p>Same architecture, same training loop, corrected training data, and the same
-input now scores 0.04. The model was fine. What it had been shown was not.</p>
+<p>Endpointing answers "have they finished talking?" and I think adding a model
+there would be a mistake. It's a state machine over VAD output with a hangover
+timer, and all the interesting content is in the policy — how long a pause runs
+before it counts as a turn ending, and what happens to that threshold
+mid-sentence.</p>
 
-<div class="callout">
-<span class="label">The cheapest thing I did all project</span>
-Before training the VAD I wrote an evaluation set of the specific things I
-expected to break it: digital silence, mains hum, babble, and speech recorded
-too quietly. It took ten minutes. It then decided which checkpoint shipped,
-because the best hard-case score was 0.806 at step 2750 while the final step of
-the run scored 0.699. Last is not best, and only a targeted eval set can tell
-you that.
-</div>
+<p>It also decides the threading model for everything else, which I didn't see
+coming. Barge-in means detecting speech while the agent is still talking. VAD is
+sub-millisecond so it can sit inline, but recognition and synthesis take
+hundreds of milliseconds, and if either runs on the event loop your agent
+literally can't hear you while it speaks. The architecture of everything else
+falls out of that one requirement.</p>
 
-<h2><span class="num">3</span>The stage with no model in it</h2>
+<h2>The alignment problem, and the trick that ducks it</h2>
 
-<p>Endpointing answers "have they finished talking?" and it is the one box in
-the diagram where adding a model would be a mistake. It is a state machine over
-VAD output with a hangover timer, and the interesting content is entirely in the
-policy: how long a pause has to run before it counts as a turn ending, and what
-happens to that threshold mid-sentence.</p>
+<p>Here's the core difficulty. You have 400 audio frames and three characters,
+and nothing tells you which frames belong to which character. Hand-labelling
+that at any scale isn't happening.</p>
 
-<p>It also dictates the threading model for everything else. Barge-in means
-detecting speech while the agent is still talking. VAD is sub-millisecond so it
-can run inline, but recognition and synthesis take hundreds of milliseconds, and
-if either of them runs on the event loop the agent literally cannot hear you
-while it speaks. The architecture of the whole system falls out of that one
-requirement.</p>
+<p>CTC's answer is to refuse the question. Define a many-to-one collapse — merge
+repeats, drop blanks — then sum the probability of every frame labelling that
+collapses to your target, and a forward-backward recursion makes that sum
+tractable. That blank does two jobs that are easy to run together: it lets the
+model say nothing at a frame it's unsure about, and it separates genuine
+repeats, because without a blank between them "hello" collapses to "helo".</p>
 
-<h2><span class="num">4</span>The alignment problem, and the trick that dodges it</h2>
-
-<p>Here is the core difficulty of recognition. You have 400 audio frames and
-three characters, and nothing tells you which frames belong to which character.
-Hand-labelling that correspondence at scale is not an option.</p>
-
-<p>CTC's answer is to refuse the question. Define a many-to-one collapse, merge
-repeats and drop blanks, then sum the probability of every frame labelling that
-collapses to the target sequence. A forward-backward recursion makes that sum
-tractable. The blank symbol does two separate jobs that are easy to conflate: it
-lets the model emit nothing at a frame it is unsure about, and it separates
-genuine repeats, because without a blank between them "hello" collapses to
-"helo".</p>
-
-<p>The first recognizer, a BiGRU with a CTC head trained on real LibriSpeech,
-produced this:</p>
+<p>My first recognizer, a BiGRU with a CTC head on real LibriSpeech, produced
+this:</p>
 
 <pre><code>hyp: he inl san er mianthes tlen kis roint the stieia sord meai wen
 ref: but in less than five minutes the staircase groaned beneath an
      extraordinary weight</code></pre>
 
-<p>Word error rate 1.076, which is worse than emitting nothing. The useful
-question is not "how do I make this better" but "what kind of wrong is this".
-The rhythm is roughly right and the syllable count is roughly right. What is
-missing is any notion that English words are a finite set. CTC assumes
-conditional independence between output frames given the audio, which is exactly
-a statement that it has no language model. The output is what acoustics sound
+<p>Word error rate 1.076, so worse than emitting nothing. But look at what kind
+of wrong it is. Rhythm's roughly right. The syllable count's roughly right.
+What's missing is any sense that English words are a finite set — and CTC
+assumes conditional independence between frames given the audio, and that is precisely a statement that it has no language model. That's what acoustics sound
 like without one.</p>
 
-<h2><span class="num">5</span>The failure that does not appear in the loss</h2>
+<h2>Two more that trained happily while throwing away my work</h2>
 
-<p>Then a run collapsed, and it took me longer than it should have to notice,
-because it collapsed into something that looks like health.</p>
+<p>PyTorch's CTC loss with <code>zero_infinity=True</code> substitutes a zero
+gradient when a target is longer than the encoder output. The sample becomes
+impossible instead of loud, so a bad vocabulary choice silently trains on a
+fraction of your data.</p>
 
-<p>The model discovered that emitting blank on every single frame is a safe
-answer with a finite loss. All frames blank. Output entropy 0.82 out of a
-possible 6.93. Greedy decoding returns the empty string.</p>
+<p>And <code>torch.cuda.is_available()</code> returned True twice on machines
+where a convolution then failed — once with a CUDA 13 wheel against a CUDA 12
+driver, once with cuDNN 9.20 against a 9.10 driver. Asking whether a capability
+exists isn't the same as exercising it. My bootstrap runs an actual convolution
+now and looks at the result.</p>
 
-<div class="callout warn">
-<span class="label">Why it hid</span>
-The loss was flat at a plausible value, which reads as a plateau rather than a
-failure. Word error rate was pinned at 1.0, which is indistinguishable from a
-model that is merely early in training. Both of the numbers I was watching were
-blind to it, and they were blind in a way that looked like patience being
-required.
-</div>
+<h2>It was the warmup, and I nearly never found out</h2>
 
-<p>The fix is not a better loss curve, it is a different instrument. Blank
-fraction per frame is a signal specific to this failure mode, it costs one line
-to log, and it goes to 1.0 the moment the collapse starts. Every silent failure
-I hit afterwards followed the same pattern: the headline metric could not
-distinguish the failure from a normal stage of training, and something cheap and
-specific could.</p>
-
-<p>Two more from the same family, both of which train happily while quietly
-discarding your work. PyTorch's CTC loss with <code>zero_infinity=True</code>
-substitutes a zero gradient when a target is longer than the encoder output,
-which makes the sample impossible rather than loud, so a bad vocabulary choice
-silently trains on a fraction of your data. And <code>torch.cuda.is_available()</code>
-returned True twice on machines where a convolution then failed, once on a
-CUDA 13 wheel against a CUDA 12 driver and once on cuDNN 9.20 against a 9.10
-driver. Asking whether a capability exists is not the same as exercising it. The
-bootstrap now runs a real convolution and looks at the result.</p>
-
-<h2><span class="num">6</span>It was the warmup, not the vocabulary</h2>
-
-<p>After the collapse I had a confident theory: the subword vocabulary of 1024
-was too large for the data, and the fix was to restart at 256. I was about to
-spend three days on it.</p>
+<p>After the collapse I had a confident theory. Subword vocabulary of 1024, too
+large for the data, restart at 256. I was about to spend three days on it.</p>
 
 <p>Instead I spent an hour reading the reference recipe. ESPnet uses 5,000
-subwords on this same corpus and reaches 8.4% word error. The vocabulary was not
-the problem, and had I "fixed" it that way and had it happened to work, I would
-have learned something false and kept it permanently.</p>
+subwords on this same corpus and gets 8.4% word error. So vocabulary wasn't the
+problem, and here's the part that bothers me: if I'd "fixed" it that way and it
+had happened to work, I'd have learned something false and kept it
+permanently.</p>
 
-<p>The actual cause was the learning rate schedule. My warmup was 1,500 steps
+<p>Actual cause was the learning rate schedule. My warmup was 1,500 steps
 against the reference's 15,000. Too fast a rise locks CTC into the all-blank
-minimum and it does not come back out. One hour of reading beat three days of
-guessing, which is the most repeatable lesson in the whole project.</p>
+minimum and it doesn't come back out.</p>
 
-<h2><span class="num">7</span>What the Conformer actually bought</h2>
+<h2>What the Conformer bought</h2>
 
-<p>Replacing the 2015 architecture with the 2026 one, on identical data, is the
-cleanest experiment in the repo: same 4.1 hours of audio, same tooling, only the
-model changed.</p>
+<p>Swapping the 2015 architecture for the 2026 one is the cleanest experiment in
+the repo — same 4.1 hours of audio, same tooling, only the model changed.</p>
 
 <div class="kpi">
   <div class="box"><span class="v">1.076 to 0.607</span><span class="k">word error, 44% relative</span></div>
@@ -174,9 +146,6 @@ model changed.</p>
   <div class="box"><span class="v">2.7x</span><span class="k">faster inference</span></div>
   <div class="box"><span class="v">0</span><span class="k">extra training data</span></div>
 </div>
-
-<p>It is worth looking at where the parameters actually sit, because the answer
-is not where the name suggests.</p>
 
 <div class="diagram">audio ──▶ log-mel ──▶ <span class="a">SUBSAMPLE ×4</span> ──▶ <span class="a">12 × CONFORMER</span> ──┬──▶ <span class="g">CTC head</span>
                      <span class="m">100/s → 25/s</span>                   │    <span class="m">where things ARE</span>
@@ -190,63 +159,64 @@ is not where the name suggests.</p>
  │  <span class="m">526K</span>           <span class="m">329K</span>                <span class="m">207K</span>          <span class="m">526K</span>  │
  │              <span class="m">global context</span>      <span class="m">local, 1.24 s</span>            │
  │              <span class="m">relative pos.</span>       <span class="m">causal ⇒ streams</span>         │
- └────────────────────────────────────────────────────────┘
- <span class="w">Two thirds of the block is feed-forward. Attention is the</span>
- <span class="w">smallest learned part of it.</span></div>
+ └────────────────────────────────────────────────────────┘</div>
 
-<p>The two heads are there because each covers the other's structural weakness
-on one shared encoder. CTC is monotonic, cheap and streams trivially, and it has
-no language model, which is where "mianthes" comes from. An attention decoder
-has the language model and can also wander or loop, because nothing forces its
-attention to move forward. Running both makes the decoder's fluency available
-while CTC's monotonicity acts as a stabiliser.</p>
+<p>Worth a look at where the parameters actually sit, because it isn't where the
+name suggests. Two thirds of each block is feed-forward. Attention is the
+smallest learned part of the thing.</p>
 
-<h2><span class="num">8</span>Streaming costs three percent</h2>
+<p>Two heads on one shared encoder, because each covers the other's structural
+weakness. CTC is monotonic, cheap, streams trivially, and has no language model
+— that's where "mianthes" comes from. An attention decoder has the language
+model and can also wander or loop, since nothing forces its attention forward.
+Run both and you get the decoder's fluency with CTC's monotonicity acting as a
+stabiliser.</p>
 
-<p>Making a Conformer stream takes two changes and it only works if you make
-both. Attention gets chunked masking, so a frame attends within its chunk plus
-some history. The depthwise convolution has to become causal, left-padded only,
-because otherwise it leaks roughly 15 frames of future context and the
-attention mask you carefully wrote is a fiction.</p>
+<h2>Streaming costs three percent</h2>
 
-<p>Train with the chunk size resampled every batch and one set of weights then
-serves every latency operating point. Measured cost on my data: word error goes
-from 0.607 to 0.627 for 640 ms of lookahead, about 3% relative.</p>
+<p>Making a Conformer stream takes two changes and only works if you do both.
+Attention gets chunked masking so a frame attends within its chunk plus some
+history. And the depthwise convolution has to become causal, left-padded only,
+because otherwise it leaks about 15 frames of future context and the attention
+mask you carefully wrote is fiction.</p>
 
-<p>That number is worth internalising. Streaming is usually discussed as a
-quality sacrifice. At this scale it is a rounding error, and the reason to pick
-an architecture that streams by construction is that retrofitting it later means
-changing the convolution, which means retraining.</p>
+<p>Train with the chunk size resampled every batch and one set of weights serves
+every latency operating point. Cost on my data: word error goes 0.607 to 0.627
+for 640 ms of lookahead, roughly 3% relative.</p>
 
-<h2><span class="num">9</span>Two ways my evaluation lied to me</h2>
+<p>Streaming usually gets discussed as a quality sacrifice. At this scale it's a
+rounding error, and the reason to pick an architecture that streams by
+construction is that retrofitting means changing the convolution, which means
+retraining.</p>
 
-<p>The held-out set shared 39 of 39 speakers with the training set. Every word
-error rate I had quoted was therefore speaker-dependent, optimistic, and not
-comparable with any published number. Held out has to mean held out along the
-axis you care about, and for recognition that axis is speakers, not
-utterances.</p>
+<h2>Two ways my evaluation lied to me</h2>
 
-<p>Checkpoint averaging then made the model worse, which surprised me because it
-is folklore that it helps: averaging the last five checkpoints gave 0.659
-against a best single checkpoint of 0.612. The technique assumes the checkpoints
-being averaged orbit a single basin. Mine spanned a run that went from 0.86 to
-0.61, so they were in different basins and the average sat between them. Now I
-average the best K by held-out word error and keep the result only if it wins.</p>
+<p>My held-out set shared 39 of 39 speakers with training. Every word error rate
+I'd quoted was speaker-dependent, optimistic, and not comparable to any published
+number. Held out has to mean held out along the axis you care about, and for
+recognition that's speakers.</p>
 
-<h2><span class="num">10</span>What the numbers are worth</h2>
+<p>Then checkpoint averaging made things worse, which surprised me because it's
+folklore that it helps — averaging the last five gave 0.659 against a best single
+of 0.612. Averaging assumes the checkpoints orbit one basin. Mine spanned a
+run that went from 0.86 to 0.61, so they were in different basins and the average
+landed between them. I average the best K by held-out error now and keep it only
+if it wins.</p>
 
-<p>Whisper base.en reaches 0.033 word error, against my 0.607. It also saw
-680,000 hours of audio against my 100. That is a 165,000 times data advantage,
-and quoting my number next to theirs without that ratio would be dishonest.</p>
+<h2>What the numbers are worth</h2>
 
-<p>The more useful version of the comparison is that "the gap is data" turns out
-to be false as a general claim. For the VAD the gap really was data, and fixing
-the data fixed the model. For synthesis it was architecture. For recognition it
-is data, architecture, recipe and inference all at once, and the only way I
-found out which was which was by changing one at a time and measuring.</p>
+<p>Whisper base.en gets 0.033 word error against my 0.607. It also saw 680,000
+hours of audio against my 100. That's a 165,000× data advantage and quoting my
+number next to theirs without it would be dishonest.</p>
 
-<p>The full write-up, module by module, with the training runs and the rest of
-the failure catalogue, is in the repo under <code>docs/</code>.</p>
+<p>More useful comparison:  "the gap is data" turns out to be false as
+a general claim. For the VAD the gap really was data, and fixing the data fixed
+the model. For synthesis it was architecture. For recognition it's data,
+architecture, recipe and inference all at once, and the only way I found out
+which was which was changing one at a time.</p>
+
+<p>I still don't have a good instinct for which one it'll be on a new problem.
+Maybe that only comes from doing it more times than I have.</p>
 
 </main>
 </body>
