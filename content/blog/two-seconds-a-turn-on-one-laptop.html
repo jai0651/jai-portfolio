@@ -3,81 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Two seconds a turn, on one laptop</title>
-<meta name="description" content="Vela is an assistant whose ears, voice, body and memory all run on one machine. The engineering is mostly a latency budget, a feedback loop that made her answer herself, and a 90x speed gap that turned out to be architectural." />
-<meta name="date" content="2026-09-12" />
+<title>My assistant started answering herself</title>
+<meta name="description" content="Vela runs on one laptop and answers in about two seconds. Getting there meant a feedback loop I did not design for, and finding out that the reason she can't speak in my voice is the runtime, not the model." />
+<meta name="date" content="2026-09-19" />
 <meta name="tags" content="ai engineering, local ai, voice, latency, apple silicon" />
 </head>
 <body>
 <main>
 
-<p>Vela is an assistant that lives in a process which does not stop when you
-close the window. She sees the room through the camera, hears you, answers out
-loud, and can do things. Everything except the language model runs on the
-laptop.</p>
-
-<p>The interesting parts are not the models. They are off the shelf. The
-interesting parts are a latency budget that has to be defended stage by stage, a
-feedback loop that made her talk to herself indefinitely, and a 90 times speed
-gap between two text-to-speech systems that turned out to be architectural
-rather than anything I could tune.</p>
-
-<h2><span class="num">1</span>The rule that shapes everything</h2>
-
-<p>Every companion-style AI project dies the same death. The agent has nothing
-to actually do, so it fabricates an inner life, and you feel the lie inside
-ninety seconds.</p>
-
-<p>So the rule is no theater. If she did nothing, she says she did nothing. If
-she does not know, she says so. If the camera is muted, she says it is muted
-rather than describing the room. Nothing in her notebook is generated prose;
-every entry is an artifact with a timestamp behind it.</p>
-
-<p>That sounds like a design philosophy and it is really an engineering
-constraint, because it rules out the cheap version of every feature. Her
-situation summary is read out of the database each turn, which is why asking
-what step her model reached returns 5600, a real measurement from her ledger,
-instead of a plausible number.</p>
-
-<h2><span class="num">2</span>The turn budget</h2>
-
-<div class="diagram">  mic ──▶ <span class="a">Silero VAD</span> ──▶ <span class="a">Whisper (MLX)</span> ──▶ <span class="c">brain</span> ──▶ <span class="a">Kokoro</span> ──▶ speaker
-          <span class="m">~1ms/frame</span>       <span class="m">~0.3s</span>            <span class="m">0.67s</span>     <span class="m">0.2s</span>      <span class="m">48kHz</span>
-          <span class="g">local</span>            <span class="g">local, Metal</span>     <span class="w">remote</span>    <span class="g">local, Metal</span>
-
-  <span class="m">One turn, end of your sentence to start of hers:</span> <span class="w">about 2 seconds</span></div>
-
-<p>Measured on an M4 MacBook Air with 16 GB, and every number here came off a
-run on that machine rather than an estimate. Voice activity detection is Silero
-v5 on 512 sample frames and costs nothing worth measuring. Transcription is
-whisper-base.en through MLX on the GPU at about 0.3 seconds. Synthesis is
-Kokoro-82M at 13.2 times realtime. The only remote call is the language model,
-at 0.67 seconds.</p>
-
-<p>Endpointing costs between 300 and 950 milliseconds, which makes it the second
-most expensive stage in the whole loop, and it contains no model at all.</p>
-
-<h2><span class="num">3</span>Turn detection is two layers, not one</h2>
-
-<p>Silero tells you a pause happened. It does not tell you the turn ended, and
-those are very different claims, because people pause mid-sentence constantly.
-An assistant that treats every acoustic gap as your turn ending interrupts you
-for a living.</p>
-
-<p>So there is a second layer on top of the acoustic endpoint, and it is
-linguistic rather than acoustic. If the utterance sounds finished, commit after
-300 milliseconds. If it trails off on "and", "so", "because" or "um", wait 950
-milliseconds for more. If more speech arrives, append it and re-evaluate.</p>
-
-<p>Two smaller constants matter as much as the big ones. A redemption window of
-320 milliseconds stops a breath from ending your turn. A pre-speech pad of 220
-milliseconds keeps the onset consonant that the detector would otherwise clip,
-which is the difference between hearing "sixty" and hearing "ixty".</p>
-
-<h2><span class="num">4</span>She answered herself, forever</h2>
-
-<p>Speakers leak into the microphone. That sentence is obvious written down and
-I did not design for it, so here is what the log looked like:</p>
+<p>Here's a log from an evening in early September:</p>
 
 <pre><code>(tts 1.97s for 2.4s of audio)
 (cut off)
@@ -85,138 +19,186 @@ I did not design for it, so here is what the log looked like:</p>
 you: ONE            &lt;- her own voice
 vela: One.</code></pre>
 
-<p>She speaks. The speaker output leaks into the microphone. Voice activity
-detection fires on her own voice. Barge-in kills playback about 300 milliseconds
-in. Whisper transcribes the leak. She answers it. That is a closed loop with no
-exit, and every individual component behaved exactly as specified.</p>
+<p>Vela is an assistant that runs on my laptop and doesn't stop when I close the
+window. She'd just started talking to herself, and she was prepared to keep
+doing it all night.</p>
 
-<div class="callout warn">
-<span class="label">Where the fix has to live</span>
-Not in any component. Each one was correct. The loop only exists at the level of
-the orchestrator, which is the piece with no paper behind it. The microphone is
-now ignored while she is speaking, plus a 350 millisecond tail for room reverb.
-Barge-in comes back if you are on headphones, because then the premise of the
-problem is gone.
-</div>
+<p>Nothing was broken. That's the annoying part. Every component did exactly
+what I'd asked. The speaker leaks into the mic, so Silero hears speech. Speech
+during playback means barge-in, so playback gets killed about 300ms in. Whisper
+transcribes what leaked. The transcript goes to the model and the model answers it. Now
+she's talking again, so round it goes.</p>
 
-<h2><span class="num">5</span>Match commands before you reach for the model</h2>
+<p>You can only see that loop if you're looking at the orchestrator, because
+it doesn't exist inside any of the pieces. That's the part of this project with
+no paper behind it and, honestly, most of the actual work.</p>
 
-<p>Opening an app, pausing music, setting a timer and reading the time are all
-matched by regular expressions before any model call happens. That looks
-primitive next to routing everything through a language model, and it is the
-right call for three reasons: those commands answer instantly, they answer
-deterministically, and they cannot be talked out of doing the right thing.
-Anything unmatched falls through to conversation.</p>
+<p>The fix is dull: ignore the mic while she's speaking, plus a 350ms tail for
+the room to stop ringing. If you're on headphones the premise goes away, so
+<code>VELA_BARGE=on</code> gives you interruption back.</p>
 
-<p>The lesson generalises past assistants. The parts of a system where the
-correct behaviour is fully specified do not benefit from a model, and putting
-one there converts a guarantee into a probability.</p>
+<h2>What she is, roughly</h2>
 
-<h2><span class="num">6</span>Telling the model what it cannot do</h2>
+<p>She sees the room through the camera, hears you, answers out loud, and can do
+things (open apps, play music, search the web and read the results back, set
+timers she'll announce). Everything except the language model runs on the
+machine. Numbers below are all from an M4 MacBook Air with 16GB, measured on the
+5th and 6th of September, and none of them are estimates.</p>
 
-<p>Small models fail a specific way: asked about a capability they do not have,
-they answer as if they do. Asked what is in your calendar, a 3B model will
-cheerfully invent a meeting.</p>
+<div class="diagram">  mic ──▶ <span class="a">Silero VAD</span> ──▶ <span class="a">Whisper (MLX)</span> ──▶ <span class="c">brain</span> ──▶ <span class="a">Kokoro</span> ──▶ speaker
+          <span class="m">~1ms/frame</span>       <span class="m">~0.3s</span>            <span class="m">0.67s</span>     <span class="m">0.2s</span>      <span class="m">48kHz</span>
+          <span class="g">local</span>            <span class="g">local, Metal</span>     <span class="w">remote</span>    <span class="g">local, Metal</span>
 
-<p>The prompt now states explicitly that she has no calendar, email, files,
-battery, location, browser history or screen access. That single addition moved
-the small models from 1 out of 4 to 4 out of 5 on a set of hallucination traps.
-They had not been lying so much as under-instructed: nothing in the context said
-those capabilities were absent, so the most probable continuation was the one
-where they exist.</p>
+  <span class="m">end of your sentence to start of hers:</span> <span class="w">about 2 seconds</span></div>
 
-<h2><span class="num">7</span>Why she does not speak in my voice yet</h2>
+<p>Kokoro runs at 13.2× realtime on Metal, so synthesis is never what you're
+waiting on. The one remote call is the model, at 0.67s. I keep meaning to pull that
+local too and keep not doing it, mostly because 0.67s is hard to beat on this
+machine and the honesty rule (below) matters more to me than the last
+dependency.</p>
 
-<p>The goal was for her to answer in my voice, from a 32 second clean reference
-recording. She does not, and the reason is the most useful thing I measured all
-month.</p>
+<h2>The expensive stage has no model in it</h2>
+
+<p>Endpointing costs somewhere between 300 and 950ms, which makes it the second
+most expensive thing in the loop. There's no neural network anywhere near it.</p>
+
+<p>Silero tells you a pause happened. It does not tell you the turn ended, and
+if you treat those as the same thing you've built something that interrupts
+people for a living. So there's a second layer, and it's linguistic: if the
+sentence sounds finished, commit after 300ms. If it trails off on "and", "so",
+"because", "um" — wait 950ms. More speech shows up, append it, ask again.</p>
+
+<p>Two smaller constants matter about as much. <code>redemptionMs=320</code> so a
+breath doesn't end your turn, and <code>preSpeechPadMs=220</code> so the VAD
+doesn't clip the consonant you started with. Without the second one "sixty"
+arrives as "ixty" often enough to be maddening.</p>
+
+<h2>Regex before the model</h2>
+
+<p>Opening an app, pausing music, asking the time — all matched with regular
+expressions before any model call. It looks primitive next to routing everything
+through an LLM. Would I do it again? Yes, without thinking about it. Those answer instantly, they answer the same
+way every time, and nothing can talk them out of it. Everything unmatched falls
+through to conversation.</p>
+
+<p>I think the general version is: wherever the correct behaviour is fully
+specified, a model converts a guarantee into a probability. Not always a bad
+trade. Usually one worth making on purpose though.</p>
+
+<h2>Telling her what she can't do</h2>
+
+<p>Small models have a specific failure that used to drive me up the wall. Ask
+about a capability they don't have and they'll just answer anyway — ask a 3B
+model what's in your calendar and it'll invent you a meeting, complete with a
+time.</p>
+
+<p>The prompt now says outright that she has no calendar, email, files, battery,
+location, browser history or screen access. That one addition took the small
+models from 1 out of 4 to 4 out of 5 on my hallucination traps. They weren't
+really lying, I think — nothing in the context said those things were absent, so
+the likeliest continuation was the world where they exist.</p>
+
+<h2>Why she doesn't speak in my voice</h2>
+
+<p>I recorded 53 seconds, cleaned it to 32 seconds of English at 48kHz, and
+wanted her to answer in that voice. She doesn't, and working out why was the most
+useful afternoon I've had in a while.</p>
+
+<p>First attempt at benchmarking said 0.05× realtime for short text and 0.29×
+for longer text. Which is impossible — longer input can't take proportionally
+less time. That was warmup landing entirely on the first call. Warm, it's 0.59×.
+(I now throw away the first run of everything, and I'm faintly embarrassed about
+how long it took to make that a habit.)</p>
+
+<p>Then I split the profile by stage. That's where it got interesting:</p>
 
 <div class="kpi">
   <div class="box"><span class="v">34.9s</span><span class="k">to speak 4.9s of audio</span></div>
-  <div class="box"><span class="v">81.3%</span><span class="k">of it in one stage</span></div>
-  <div class="box"><span class="v">4.4</span><span class="k">tokens per second</span></div>
+  <div class="box"><span class="v">81.3%</span><span class="k">in one stage</span></div>
+  <div class="box"><span class="v">4.4</span><span class="k">tokens/sec</span></div>
   <div class="box"><span class="v">25</span><span class="k">needed for realtime</span></div>
 </div>
 
-<p>Profiling the two stages separately was the whole investigation. The vocoder
-takes 4.8 seconds and is fine. The token generator takes 28.4 seconds. It is one
-stage, and it is 5.7 times too slow, which means every optimisation aimed
-anywhere else is wasted effort.</p>
+<p>The vocoder takes 4.8s and is fine. The token generator takes 28.4s. One
+stage, 5.7× too slow, and every optimisation I'd been considering was aimed
+somewhere else.</p>
 
-<p>What that stage does is generate speech autoregressively: a 0.5B transformer
-emitting discrete speech tokens at 25 per second of audio, one at a time, each
-conditioned on all the previous ones. A five second reply is around 125
-sequential forward passes and none of them can be parallelised.</p>
+<p>That stage generates speech autoregressively: a 0.5B transformer emitting
+discrete speech tokens at 25 per second of audio, one at a time, each one
+conditioned on everything before it. A five second reply is ~125 sequential
+forward passes and you can't parallelise any of them. Kokoro is fast because it
+isn't autoregressive at all — it predicts the whole mel spectrogram in
+essentially one shot. That architectural difference is the entire 90× gap. No
+amount of tuning was ever going to close it.</p>
 
-<p>Kokoro is fast because it is not autoregressive. It predicts the whole mel
-spectrogram in essentially one shot. That architectural difference is the entire
-90 times gap between them, and no amount of tuning closes it.</p>
+<h2>A bigger model running faster</h2>
 
-<h2><span class="num">8</span>A model three times larger, running four times faster</h2>
-
-<p>The damning comparison is between two models on the same machine.</p>
+<p>Here's the comparison that actually changed my mind, both measured on this
+laptop:</p>
 
 <div class="tablewrap">
 <table>
-<thead><tr><th>Model</th><th>Parameters</th><th>Runtime</th><th>Rate</th></tr></thead>
+<thead><tr><th>Model</th><th>Params</th><th>Runtime</th><th>Rate</th></tr></thead>
 <tbody>
-<tr><td>Qwen2.5</td><td>1.5B</td><td>MLX</td><td>about 20 tokens/s</td></tr>
-<tr><td>Chatterbox T3</td><td>0.5B</td><td>PyTorch / MPS</td><td>4.4 tokens/s</td></tr>
+<tr><td>Qwen2.5</td><td>1.5B</td><td>MLX</td><td>~20 tok/s</td></tr>
+<tr><td>Chatterbox T3</td><td>0.5B</td><td>PyTorch / MPS</td><td>4.4 tok/s</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Three times the parameters, four and a half times the speed. Per parameter,
-MLX is roughly 13 times more efficient here than PyTorch's MPS backend.</p>
+<p>Three times the parameters, four and a half times the speed. Per parameter
+that's MLX being roughly 13× more efficient here.</p>
 
-<p>The reason is what autoregressive decoding actually is. It is
-memory-bandwidth bound, not compute bound: each token requires reading the whole
-weight matrix out of memory, and the arithmetic performed on it is trivial by
-comparison. MLX exploits unified memory and avoids per-kernel launch overhead.
-MPS does neither well. This particular model also runs classifier-free guidance,
-which means two forward passes per token and therefore double the bandwidth
-cost.</p>
+<p>Autoregressive decode is memory-bandwidth bound, not compute bound — every
+token means reading the whole weight matrix out of memory, and the arithmetic
+you do with it is trivial by comparison. MLX uses unified memory properly and
+avoids per-kernel launch overhead. MPS does neither well. This particular model
+also runs classifier-free guidance, so that's two forward passes per token and
+double the bandwidth. Dropping <code>cfg_weight</code> to 0.3 bought about 2×;
+setting it to 0 is faster still and crashes on a batch-dim bug I haven't chased
+down.</p>
 
-<p>So the bottleneck is not the model size, and it is not the laptop. It is the
-runtime, which is a much more actionable conclusion than "clone mode is slow"
-and I would never have got there without splitting the profile by stage.</p>
+<p>So it's not the model size and it's not the M4. It's the runtime. Porting
+that stage to MLX should land near 60 tok/s, or about 2.4× realtime, and
+<code>mlx-audio</code> has already done Spark-TTS and CSM so the path exists. I
+haven't done it yet.</p>
 
-<p>Ranked by expected gain, the fix is to port that stage to MLX, which would
-put it near 2.4 times realtime. Before that, there is a cheap one worth more
-than it looks: her replies repeat constantly, so pre-synthesising the fifty most
-common ones in my voice and hash-keying them means you hear my voice most of the
-time at zero latency, with the fast model as the fallback for novel sentences.</p>
+<p>The cheap fix first, probably: her replies repeat constantly ("I'm here",
+"Opening Chrome", "Paused", "It's 11:40 p.m."). Pre-synthesise the top fifty in
+my voice, hash-key them, fall back to Kokoro for anything new. You'd hear my
+voice most of the time, at zero latency.</p>
 
-<h2><span class="num">9</span>Three of five failed on dependency rot</h2>
+<h2>Three of five died on packaging</h2>
 
-<p>Five approaches to voice cloning were tried. One works well and is too slow.
-One garbled its output. The other three never got far enough to be judged on
-quality: one pins a library version that removes a dependency the working
-synthesizer needs, one calls a model-hub API that no longer exists, and one has
-a README telling you to go use a different project.</p>
+<p>I tried five approaches to cloning. One works and is too slow. One garbled
+its output, hallucinating and looping words. The other three never got far
+enough to judge on quality at all: one pins <code>librosa==0.9.1</code>, which
+removes <code>soxr</code>, which breaks Kokoro; one calls a model-hub API that
+no longer exists; and one's own README tells you to go use a different project.</p>
 
-<p>That is the state of this corner of the ecosystem right now, and it is worth
-budgeting for. When three of five candidates fail on packaging rather than on
-merit, evaluation time is mostly environment time, and the right move is to
-timebox each candidate to the question "does it install and run at all" before
-you listen to a single sample.</p>
+<p>Is that a fair test of the models? Probably not. It's the state of this corner
+of the ecosystem though: aggressive pins, fast decay. Budget your evaluation time as environment time and ask "does it install
+and run" before you listen to a single sample.</p>
 
-<h2><span class="num">10</span>Always discard the first run</h2>
+<h2>Where it is</h2>
 
-<p>My first benchmark reported 0.05 times realtime on short text and 0.29 on
-longer text. Longer text taking proportionally less time is impossible, which is
-what made the result readable: warmup had landed entirely on the first call.
-Warm, it measures 0.59.</p>
+<p>She's at phase six of six, which means she can propose an edit to her own
+code, branch it, run her 26 tests against it, canary it, and merge or revert.
+Her research program is paused at my request and she'll tell you so if you ask,
+because the alternative is theater.</p>
 
-<p>Thermal state moves these numbers meaningfully too, on a fanless machine that
-has been working for an hour. A benchmark on a laptop is measuring the laptop's
-current mood as much as the code, and the honest way to report it is to say
-which run, how warm, and how many.</p>
+<p>That word does a lot of work in this project. Every companion-AI thing I've
+seen dies the same way: the agent has nothing to do, so it invents an inner
+life, and you can feel the lie inside ninety seconds. So the rule is that she
+says she did nothing if she did nothing, says she doesn't know when she doesn't,
+and says the camera is muted instead of describing a room she can't see. Her
+memory is a SQLite database — episodic, semantic, narrative, plus a ledger of
+predictions she wrote down before testing them — and it's read fresh every turn.
+Ask what step her model grokked at and you get 5600, because that number is in
+the ledger.</p>
 
-<p>She currently sits at phase six of six, where she can propose an edit to her
-own code, branch it, run her tests against it, canary it, and merge or revert.
-Her research program is paused at my request, which she will tell you if you
-ask, because the alternative would be theater.</p>
+<p>Whether any of that actually makes her feel present, I genuinely don't know
+yet. I've been the only user, so I'm the worst possible judge of it.</p>
 
 </main>
 </body>
