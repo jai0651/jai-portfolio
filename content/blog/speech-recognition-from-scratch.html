@@ -4,198 +4,261 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>How I built a speech recognizer from scratch, layer by layer</title>
-<meta name="description" content="A working guide to the listening half of a voice agent: log-mel features, a frame-level VAD, endpointing policy, CTC and the alignment problem, and the Conformer choices that halved word error and still stream." />
+<meta name="description" content="A working guide to speech recognition: why alignment is the whole problem, how CTC dissolves it, what the blank symbol is really for, why CTC cannot spell, and the Conformer choices that halved word error and still stream." />
 <meta name="date" content="2026-05-09" />
 <meta name="tags" content="speech recognition, asr, ctc, conformer, pytorch" />
 </head>
 <body>
 <main>
 
-<p>This is how to build the listening half of a voice agent without calling
-anyone's API: features, voice activity detection, endpointing, and the
-recognizer itself. By the end you should know what each stage is actually
-solving, which design choices matter, and which ones you can copy from a
-reference recipe and stop thinking about.</p>
+<p>Someone says "cat". You compute features and get 400 frames. Your transcript
+is 3 characters. Your training data contains exactly those two things, the audio
+and the string, and nothing else. Nobody has told you that frames 51 to 63 are
+the <code>c</code>.</p>
 
-<p>I'll give you the numbers from my own runs, because a recommendation with no
-measurement behind it is just an opinion.</p>
+<p>So how do you compute a loss? A network needs to know the right answer at
+each output position. You have 400 output positions and 3 labels.</p>
 
 <figure>
-<svg viewBox="0 0 760 232" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The listening pipeline: denoise, VAD, endpointing, ASR"><title>The listening pipeline: denoise, VAD, endpointing, ASR</title><rect x="24" y="58" width="155.5" height="80" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="101.75" y="87" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">denoise</text><text x="101.75" y="111" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">0 params</text><line x1="183.5" y1="98" x2="196.5" y2="98" stroke="#d99e2b" stroke-width="2.5"/><path d="M205.5 98 L194.5 92 L194.5 104 Z" fill="#d99e2b"/><rect x="209.5" y="58" width="155.5" height="80" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="287.25" y="87" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">VAD</text><text x="287.25" y="111" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">55K</text><line x1="369" y1="98" x2="382" y2="98" stroke="#d99e2b" stroke-width="2.5"/><path d="M391 98 L380 92 L380 104 Z" fill="#d99e2b"/><rect x="395" y="58" width="155.5" height="80" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="472.75" y="87" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">endpoint</text><text x="472.75" y="111" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">no model</text><line x1="554.5" y1="98" x2="567.5" y2="98" stroke="#d99e2b" stroke-width="2.5"/><path d="M576.5 98 L565.5 92 L565.5 104 Z" fill="#d99e2b"/><rect x="580.5" y="58" width="155.5" height="80" rx="10" fill="#161d29" stroke="#f0b429" stroke-width="2"/><text x="658.25" y="87" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">ASR</text><text x="658.25" y="111" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">28M</text><line x1="101.75" y1="138" x2="101.75" y2="162" stroke="#2e3a4d" stroke-width="1.5"/><text x="101.75" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">cleaner?</text><line x1="287.25" y1="138" x2="287.25" y2="162" stroke="#2e3a4d" stroke-width="1.5"/><text x="287.25" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">speech?</text><line x1="472.75" y1="138" x2="472.75" y2="162" stroke="#2e3a4d" stroke-width="1.5"/><text x="472.75" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">turn over?</text><line x1="658.25" y1="138" x2="658.25" y2="162" stroke="#2e3a4d" stroke-width="1.5"/><text x="658.25" y="176" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">what words?</text><text x="24" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">mic</text><text x="736" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">→ LLM → TTS</text><text x="380" y="212" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#d99e2b" text-anchor="middle" dominant-baseline="middle">four boxes, four different kinds of problem</text></svg>
-<figcaption>Four stages, four different kinds of problem.</figcaption>
+<svg viewBox="0 0 760 244" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="400 audio frames, three characters, no alignment between them"><title>400 audio frames, three characters, no alignment between them</title><text x="20" y="26" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#93a0b4" text-anchor="start" dominant-baseline="middle">someone says “cat”</text><rect x="20" y="90" width="13" height="20" rx="3" fill="#2e3a4d"/><rect x="38" y="83.09647187211905" width="13" height="33.80705625576189" rx="3" fill="#2e3a4d"/><rect x="56" y="78.18483576410247" width="13" height="43.63032847179505" rx="3" fill="#2e3a4d"/><rect x="74" y="76.33087532634389" width="13" height="47.33824934731223" rx="3" fill="#2e3a4d"/><rect x="92" y="77.24948465649013" width="13" height="45.501030687019764" rx="3" fill="#2e3a4d"/><rect x="110" y="74.42072447313545" width="13" height="51.15855105372909" rx="3" fill="#2e3a4d"/><rect x="128" y="73.87374673688312" width="13" height="52.25250652623375" rx="3" fill="#2e3a4d"/><rect x="146" y="76.8214849228405" width="13" height="46.357030154319006" rx="3" fill="#2e3a4d"/><rect x="164" y="82.56823117226403" width="13" height="34.86353765547192" rx="3" fill="#2e3a4d"/><rect x="182" y="84.54205841867456" width="13" height="30.91588316265089" rx="3" fill="#2e3a4d"/><rect x="200" y="84.95867734564649" width="13" height="30.082645308707022" rx="3" fill="#2e3a4d"/><rect x="218" y="81.57214303548253" width="13" height="36.855713929034934" rx="3" fill="#2e3a4d"/><rect x="236" y="80.56557429629613" width="13" height="38.86885140740773" rx="3" fill="#2e3a4d"/><rect x="254" y="76.5347846846716" width="13" height="46.93043063065678" rx="3" fill="#2e3a4d"/><rect x="272" y="73.35159026358171" width="13" height="53.296819472836575" rx="3" fill="#2e3a4d"/><rect x="290" y="73.67869944744902" width="13" height="52.64260110510195" rx="3" fill="#2e3a4d"/><rect x="308" y="77.26477009167087" width="13" height="45.47045981665826" rx="3" fill="#2e3a4d"/><rect x="326" y="78.72594584192512" width="13" height="42.548108316149744" rx="3" fill="#2e3a4d"/><rect x="344" y="80.20275148146249" width="13" height="39.594497037075016" rx="3" fill="#2e3a4d"/><rect x="362" y="84.45267157418809" width="13" height="31.09465685162383" rx="3" fill="#2e3a4d"/><rect x="380" y="86.54980787380244" width="13" height="26.900384252395128" rx="3" fill="#2e3a4d"/><rect x="398" y="82.14528325029764" width="13" height="35.70943349940471" rx="3" fill="#2e3a4d"/><rect x="416" y="76.80252260913022" width="13" height="46.39495478173954" rx="3" fill="#2e3a4d"/><rect x="434" y="74.54584273777294" width="13" height="50.90831452445411" rx="3" fill="#2e3a4d"/><rect x="452" y="75.56810187141137" width="13" height="48.86379625717726" rx="3" fill="#2e3a4d"/><rect x="470" y="75.79886058092924" width="13" height="48.40227883814153" rx="3" fill="#2e3a4d"/><rect x="488" y="75.15225396437654" width="13" height="49.69549207124693" rx="3" fill="#2e3a4d"/><rect x="506" y="77.71695999112085" width="13" height="44.56608001775832" rx="3" fill="#2e3a4d"/><rect x="524" y="83.27773357278187" width="13" height="33.444532854436275" rx="3" fill="#2e3a4d"/><rect x="542" y="87.8463952807794" width="13" height="24.307209438441205" rx="3" fill="#2e3a4d"/><rect x="560" y="83.21183005878768" width="13" height="33.576339882424634" rx="3" fill="#2e3a4d"/><rect x="578" y="79.08819050405873" width="13" height="41.82361899188255" rx="3" fill="#2e3a4d"/><rect x="596" y="77.85619340503835" width="13" height="44.287613189923285" rx="3" fill="#2e3a4d"/><rect x="614" y="76.79311911394285" width="13" height="46.413761772114306" rx="3" fill="#2e3a4d"/><rect x="632" y="73.59429170633642" width="13" height="52.81141658732716" rx="3" fill="#2e3a4d"/><rect x="650" y="73.65662971010468" width="13" height="52.686740579790644" rx="3" fill="#2e3a4d"/><rect x="668" y="77.20057150857616" width="13" height="45.59885698284769" rx="3" fill="#2e3a4d"/><rect x="686" y="81.58735430698277" width="13" height="36.82529138603446" rx="3" fill="#2e3a4d"/><rect x="704" y="82.78664660301503" width="13" height="34.42670679396994" rx="3" fill="#2e3a4d"/><rect x="722" y="85.86231069546959" width="13" height="28.275378609060823" rx="3" fill="#2e3a4d"/><text x="20" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">400 frames</text><text x="740" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">each 10 ms</text><text x="26" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="98" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="170" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="242" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="314" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="386" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="458" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="530" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="602" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="674" y="136" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">?</text><text x="20" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">target</text><rect x="300" y="154" width="46" height="40" rx="8" fill="#161d29" stroke="#f0b429" stroke-width="2"/><text x="323" y="174" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">c</text><rect x="360" y="154" width="46" height="40" rx="8" fill="#161d29" stroke="#f0b429" stroke-width="2"/><text x="383" y="174" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">a</text><rect x="420" y="154" width="46" height="40" rx="8" fill="#161d29" stroke="#f0b429" stroke-width="2"/><text x="443" y="174" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">t</text><text x="380" y="220" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="middle" dominant-baseline="middle">which frames are the c? nobody knows, and nobody will tell you</text></svg>
+<figcaption>The alignment problem. Everything in modern speech recognition is an answer to it.</figcaption>
 </figure>
 
-<p>The first thing to internalise is that these four boxes are four different
-kinds of problem, and the tools don't transfer between them. Denoising is signal
-processing. VAD is binary classification. Endpointing is policy with no model in
-it. Recognition is sequence transduction with an alignment problem underneath.
-Most of the time I got stuck, it was because I'd reached for the tool that
-belongs to the box next door.</p>
+<p>This post is the listening half of a voice agent built without calling
+anyone's API: features, voice activity detection, endpointing, and the
+recognizer. I care most about the middle part, because once you see what CTC
+actually does the rest of the field's architecture choices stop being arbitrary.
+Numbers throughout are from my own runs.</p>
 
-<h2>Features: build the log-mel yourself once</h2>
+<h2>Two obvious answers, and why both fail</h2>
 
-<p>Everything downstream eats log-mel spectrograms, so compute one by hand exactly once: frame the signal, window it, FFT, map onto the mel scale,
-take the log. Twenty minutes of work and you stop treating the input as
-magic.</p>
+<p><strong>"Just spread the labels evenly."</strong> Assign frames 1 to 133 to
+<code>c</code>, 134 to 266 to <code>a</code>, 267 to 400 to <code>t</code>. This
+is wrong, and confidently so. The <code>t</code> in "cat" is a 20 ms burst while
+the <code>a</code> might run 200 ms, so you would be training the model to call
+silence "a". Worse, the error is different for every utterance, so it never
+averages out.</p>
 
-<p>The practical thing to take away: framing parameters are part of your
-model, not tuning knobs. I reused a 512/256 overlap-add shell for a
-component trained at 512/128 — it looked harmless, and it took a 19 dB
-signal-to-noise ratio down to 6 dB. Pick <code>n_fft</code>, window and hop once,
-write them somewhere central, and make every stage read from there.</p>
+<p><strong>"Label the data properly, then."</strong> This is what the field
+actually did for thirty years. A forced aligner, built from a pronunciation
+dictionary and an HMM, produced frame labels and you trained on those. It works.
+It also means you need a lexicon for every word, a phoneme set, and a separate
+alignment model that itself has to be trained. That's the entire pre-2015
+pipeline you're trying not to build.</p>
 
-<h2>VAD: your data is the model</h2>
+<p>Which leaves the question the whole field is organised around: can you train
+on the (audio, text) pair directly, never producing an alignment at all?</p>
 
-<p>A frame-level speech detector needs about 55,000 parameters. At that size you
-can stop blaming architecture for anything. Clarifying, in a way: every problem
-you have is now a data problem.</p>
+<h2>The move: don't choose an alignment, use all of them</h2>
 
-<p>Mine reported <code>P(speech) = 1.0</code> on room noise with nobody talking.
-Same architecture, same training loop, corrected data, and the same input scores
-0.04.</p>
+<p>Let the model emit one symbol per frame, and define a rule that squashes any
+400-symbol string down to text. Then say: the probability of "cat" is the summed
+probability of <em>every</em> 400-symbol string that squashes to "cat".</p>
+
+<p>Nobody tells the model where the <code>c</code> is. It's only told that
+whatever it emitted had better collapse to "cat". It discovers the alignment
+itself, as a side effect of maximising that sum. That's CTC, and everything
+else is detail.</p>
+
+<h3>Piece one: the collapse rule creates a problem</h3>
+
+<p>Start with the obvious rule, merge adjacent repeats, since identical
+neighbours are just the same sound held longer. That works for "cat" and breaks
+immediately on any word with a genuine double letter.</p>
+
+<figure>
+<svg viewBox="0 0 760 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The two jobs the CTC blank symbol does"><title>The two jobs the CTC blank symbol does</title><text x="20" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Rule 1 alone: merge adjacent repeats</text><text x="20" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#93a0b4">h h e e l l l l o o</text><text x="330" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">→</text><text x="366" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#f0883e">h e l o</text><text x="470" y="62" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#f0883e" text-anchor="start" dominant-baseline="middle">the double l is gone</text><line x1="20" y1="90" x2="740" y2="90" stroke="#2e3a4d" stroke-width="1"/><text x="20" y="118" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Rule 2: merge repeats, then delete blanks</text><text x="20" y="156" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#93a0b4">h h e <tspan fill="#5ec27e">–</tspan> l l <tspan fill="#5ec27e">–</tspan> l o o</text><text x="330" y="156" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">→</text><text x="366" y="156" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#5ec27e">h e l l o</text><text x="490" y="156" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#5ec27e" text-anchor="start" dominant-baseline="middle">the blank survives</text><rect x="20" y="190" width="350" height="104" rx="10" fill="#161d29" stroke="#5ec27e" stroke-width="2"/><text x="195" y="216" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="21" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">job one: separator</text><text x="195" y="246" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">it breaks apart a genuine</text><text x="195" y="270" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">repeat before it is merged</text><rect x="390" y="190" width="350" height="104" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="565" y="216" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="21" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">job two: say nothing</text><text x="565" y="246" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">400 frames, 3 things to say;</text><text x="565" y="270" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">most frames add nothing new</text></svg>
+<figcaption>A blank is not silence. It is a separator, and that is the job people forget.</figcaption>
+</figure>
+
+<p>So the blank has two jobs. First is the one above: it survives the merge step and breaks a genuine repeat apart, then gets deleted. Second is more obvious once you see it. Your model has 400 frames and maybe three things to say, so most frames it has nothing new to contribute. It's mid-vowel, or in a pause,
+or unsure. A blank lets it say "nothing new this frame" without being wrong.</p>
 
 <div class="callout">
-<span class="label">Do this before you train anything</span>
-Write the evaluation set first, and make it the specific things you expect to
-break: digital silence, mains hum, babble, speech recorded too quietly. Mine
-took ten minutes and then chose which checkpoint shipped — the best hard-case
-score was 0.806 at step 2750 while the last step of the run scored 0.699.
-Without a targeted set you'd ship the final checkpoint and never know.
+<span class="label">Check yourself</span>
+Which of these collapse to "too"?  <code>t t – o o o</code> ·
+<code>t – o – o</code> · <code>t t o o o</code><br />
+Only the second. The first and third both give "to", because without an explicit
+blank between them the two o's merge. If that felt obvious, you've the blank.
 </div>
 
-<h2>Endpointing: the stage that should have no model</h2>
+<h3>Piece two: summing something you can't enumerate</h3>
 
-<p>Endpointing answers "have they finished talking?" and I'd argue against
-putting a model here. It's a state machine over VAD output plus a hangover timer,
-and all the content lives in the policy.</p>
+<p>Your loss is the negative log of the total probability of all collapsing paths. For 400 frames over a 29-symbol vocabulary, the number of valid
+alignments is astronomically large. You couldn't write them down, let alone add
+them up.</p>
 
-<p>Two layers work much better than one. The acoustic layer tells you a pause
-happened. It does not tell you the turn ended, because people pause
-mid-sentence constantly. So add a linguistic layer on top: if the utterance
-sounds finished, commit after about 300 ms; if it trails off on "and", "so",
-"because", "um", wait around 950 ms for more.</p>
+<p>You never have to, though, because alignments share prefixes.
+Every path that has emitted "c a" by frame 200 is, from frame 201 onward, facing
+exactly the same remaining problem. How it got there doesn't matter. So you
+stop tracking individual paths and instead track how much total probability has
+reached each (frame, position-in-target) cell, sweeping forward one frame at a
+time.</p>
 
-<p>Two constants that matter more than they look. A redemption window of roughly
-320 ms stops a breath from ending someone's turn. A pre-speech pad of around
-220 ms keeps the onset consonant the detector would otherwise clip — without it
-"sixty" arrives as "ixty" often enough to be a real problem.</p>
+<figure>
+<svg viewBox="0 0 760 354" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The CTC forward algorithm as a lattice sweep"><title>The CTC forward algorithm as a lattice sweep</title><text x="20" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="start" dominant-baseline="middle">Paths that have emitted “c a” by frame 200 face the same problem next</text><text x="100" y="66" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">–</text><circle cx="120" cy="66" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="127" y1="66" x2="189" y2="66" stroke="#2e3a4d" stroke-width="1"/><line x1="126" y1="70" x2="190" y2="94" stroke="#2e3a4d" stroke-width="1"/><circle cx="196" cy="66" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="203" y1="66" x2="265" y2="66" stroke="#2e3a4d" stroke-width="1"/><line x1="202" y1="70" x2="266" y2="94" stroke="#2e3a4d" stroke-width="1"/><circle cx="272" cy="66" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="279" y1="66" x2="341" y2="66" stroke="#2e3a4d" stroke-width="1"/><line x1="278" y1="70" x2="342" y2="94" stroke="#2e3a4d" stroke-width="1"/><circle cx="348" cy="66" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="355" y1="66" x2="417" y2="66" stroke="#2e3a4d" stroke-width="1"/><line x1="354" y1="70" x2="418" y2="94" stroke="#2e3a4d" stroke-width="1"/><circle cx="424" cy="66" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="431" y1="66" x2="493" y2="66" stroke="#2e3a4d" stroke-width="1"/><line x1="430" y1="70" x2="494" y2="94" stroke="#2e3a4d" stroke-width="1"/><circle cx="500" cy="66" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="507" y1="66" x2="569" y2="66" stroke="#2e3a4d" stroke-width="1"/><line x1="506" y1="70" x2="570" y2="94" stroke="#2e3a4d" stroke-width="1"/><circle cx="576" cy="66" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="583" y1="66" x2="645" y2="66" stroke="#2e3a4d" stroke-width="1"/><line x1="582" y1="70" x2="646" y2="94" stroke="#2e3a4d" stroke-width="1"/><circle cx="652" cy="66" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><text x="100" y="98" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#dde3ec" text-anchor="end" dominant-baseline="middle">c</text><circle cx="120" cy="98" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="127" y1="98" x2="189" y2="98" stroke="#2e3a4d" stroke-width="1"/><line x1="126" y1="102" x2="190" y2="126" stroke="#2e3a4d" stroke-width="1"/><circle cx="196" cy="98" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="203" y1="98" x2="265" y2="98" stroke="#2e3a4d" stroke-width="1"/><line x1="202" y1="102" x2="266" y2="126" stroke="#2e3a4d" stroke-width="1"/><circle cx="272" cy="98" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="279" y1="98" x2="341" y2="98" stroke="#2e3a4d" stroke-width="1"/><line x1="278" y1="102" x2="342" y2="126" stroke="#2e3a4d" stroke-width="1"/><circle cx="348" cy="98" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="355" y1="98" x2="417" y2="98" stroke="#2e3a4d" stroke-width="1"/><line x1="354" y1="102" x2="418" y2="126" stroke="#2e3a4d" stroke-width="1"/><circle cx="424" cy="98" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="431" y1="98" x2="493" y2="98" stroke="#2e3a4d" stroke-width="1"/><line x1="430" y1="102" x2="494" y2="126" stroke="#2e3a4d" stroke-width="1"/><circle cx="500" cy="98" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="507" y1="98" x2="569" y2="98" stroke="#2e3a4d" stroke-width="1"/><line x1="506" y1="102" x2="570" y2="126" stroke="#2e3a4d" stroke-width="1"/><circle cx="576" cy="98" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="583" y1="98" x2="645" y2="98" stroke="#2e3a4d" stroke-width="1"/><line x1="582" y1="102" x2="646" y2="126" stroke="#2e3a4d" stroke-width="1"/><circle cx="652" cy="98" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><text x="100" y="130" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">–</text><circle cx="120" cy="130" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="127" y1="130" x2="189" y2="130" stroke="#2e3a4d" stroke-width="1"/><line x1="126" y1="134" x2="190" y2="158" stroke="#2e3a4d" stroke-width="1"/><circle cx="196" cy="130" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="203" y1="130" x2="265" y2="130" stroke="#2e3a4d" stroke-width="1"/><line x1="202" y1="134" x2="266" y2="158" stroke="#2e3a4d" stroke-width="1"/><circle cx="272" cy="130" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="279" y1="130" x2="341" y2="130" stroke="#2e3a4d" stroke-width="1"/><line x1="278" y1="134" x2="342" y2="158" stroke="#2e3a4d" stroke-width="1"/><circle cx="348" cy="130" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="355" y1="130" x2="417" y2="130" stroke="#2e3a4d" stroke-width="1"/><line x1="354" y1="134" x2="418" y2="158" stroke="#2e3a4d" stroke-width="1"/><circle cx="424" cy="130" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="431" y1="130" x2="493" y2="130" stroke="#2e3a4d" stroke-width="1"/><line x1="430" y1="134" x2="494" y2="158" stroke="#2e3a4d" stroke-width="1"/><circle cx="500" cy="130" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="507" y1="130" x2="569" y2="130" stroke="#2e3a4d" stroke-width="1"/><line x1="506" y1="134" x2="570" y2="158" stroke="#2e3a4d" stroke-width="1"/><circle cx="576" cy="130" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="583" y1="130" x2="645" y2="130" stroke="#2e3a4d" stroke-width="1"/><line x1="582" y1="134" x2="646" y2="158" stroke="#2e3a4d" stroke-width="1"/><circle cx="652" cy="130" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><text x="100" y="162" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#dde3ec" text-anchor="end" dominant-baseline="middle">a</text><circle cx="120" cy="162" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="127" y1="162" x2="189" y2="162" stroke="#2e3a4d" stroke-width="1"/><line x1="126" y1="166" x2="190" y2="190" stroke="#2e3a4d" stroke-width="1"/><circle cx="196" cy="162" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="203" y1="162" x2="265" y2="162" stroke="#2e3a4d" stroke-width="1"/><line x1="202" y1="166" x2="266" y2="190" stroke="#2e3a4d" stroke-width="1"/><circle cx="272" cy="162" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="279" y1="162" x2="341" y2="162" stroke="#2e3a4d" stroke-width="1"/><line x1="278" y1="166" x2="342" y2="190" stroke="#2e3a4d" stroke-width="1"/><circle cx="348" cy="162" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="355" y1="162" x2="417" y2="162" stroke="#2e3a4d" stroke-width="1"/><line x1="354" y1="166" x2="418" y2="190" stroke="#2e3a4d" stroke-width="1"/><circle cx="424" cy="162" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="431" y1="162" x2="493" y2="162" stroke="#2e3a4d" stroke-width="1"/><line x1="430" y1="166" x2="494" y2="190" stroke="#2e3a4d" stroke-width="1"/><circle cx="500" cy="162" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="507" y1="162" x2="569" y2="162" stroke="#2e3a4d" stroke-width="1"/><line x1="506" y1="166" x2="570" y2="190" stroke="#2e3a4d" stroke-width="1"/><circle cx="576" cy="162" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="583" y1="162" x2="645" y2="162" stroke="#2e3a4d" stroke-width="1"/><line x1="582" y1="166" x2="646" y2="190" stroke="#2e3a4d" stroke-width="1"/><circle cx="652" cy="162" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><text x="100" y="194" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">–</text><circle cx="120" cy="194" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="127" y1="194" x2="189" y2="194" stroke="#2e3a4d" stroke-width="1"/><line x1="126" y1="198" x2="190" y2="222" stroke="#2e3a4d" stroke-width="1"/><circle cx="196" cy="194" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="203" y1="194" x2="265" y2="194" stroke="#2e3a4d" stroke-width="1"/><line x1="202" y1="198" x2="266" y2="222" stroke="#2e3a4d" stroke-width="1"/><circle cx="272" cy="194" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="279" y1="194" x2="341" y2="194" stroke="#2e3a4d" stroke-width="1"/><line x1="278" y1="198" x2="342" y2="222" stroke="#2e3a4d" stroke-width="1"/><circle cx="348" cy="194" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="355" y1="194" x2="417" y2="194" stroke="#2e3a4d" stroke-width="1"/><line x1="354" y1="198" x2="418" y2="222" stroke="#2e3a4d" stroke-width="1"/><circle cx="424" cy="194" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="431" y1="194" x2="493" y2="194" stroke="#2e3a4d" stroke-width="1"/><line x1="430" y1="198" x2="494" y2="222" stroke="#2e3a4d" stroke-width="1"/><circle cx="500" cy="194" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="507" y1="194" x2="569" y2="194" stroke="#2e3a4d" stroke-width="1"/><line x1="506" y1="198" x2="570" y2="222" stroke="#2e3a4d" stroke-width="1"/><circle cx="576" cy="194" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="583" y1="194" x2="645" y2="194" stroke="#2e3a4d" stroke-width="1"/><line x1="582" y1="198" x2="646" y2="222" stroke="#2e3a4d" stroke-width="1"/><circle cx="652" cy="194" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><text x="100" y="226" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#dde3ec" text-anchor="end" dominant-baseline="middle">t</text><circle cx="120" cy="226" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="127" y1="226" x2="189" y2="226" stroke="#2e3a4d" stroke-width="1"/><line x1="126" y1="230" x2="190" y2="254" stroke="#2e3a4d" stroke-width="1"/><circle cx="196" cy="226" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="203" y1="226" x2="265" y2="226" stroke="#2e3a4d" stroke-width="1"/><line x1="202" y1="230" x2="266" y2="254" stroke="#2e3a4d" stroke-width="1"/><circle cx="272" cy="226" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="279" y1="226" x2="341" y2="226" stroke="#2e3a4d" stroke-width="1"/><line x1="278" y1="230" x2="342" y2="254" stroke="#2e3a4d" stroke-width="1"/><circle cx="348" cy="226" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="355" y1="226" x2="417" y2="226" stroke="#2e3a4d" stroke-width="1"/><line x1="354" y1="230" x2="418" y2="254" stroke="#2e3a4d" stroke-width="1"/><circle cx="424" cy="226" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="431" y1="226" x2="493" y2="226" stroke="#2e3a4d" stroke-width="1"/><line x1="430" y1="230" x2="494" y2="254" stroke="#2e3a4d" stroke-width="1"/><circle cx="500" cy="226" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="507" y1="226" x2="569" y2="226" stroke="#2e3a4d" stroke-width="1"/><line x1="506" y1="230" x2="570" y2="254" stroke="#2e3a4d" stroke-width="1"/><circle cx="576" cy="226" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><line x1="583" y1="226" x2="645" y2="226" stroke="#2e3a4d" stroke-width="1"/><line x1="582" y1="230" x2="646" y2="254" stroke="#2e3a4d" stroke-width="1"/><circle cx="652" cy="226" r="6" fill="#1d2534" stroke="#2e3a4d" stroke-width="1.5"/><text x="100" y="258" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">–</text><circle cx="120" cy="258" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="127" y1="258" x2="189" y2="258" stroke="#2e3a4d" stroke-width="1"/><circle cx="196" cy="258" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="203" y1="258" x2="265" y2="258" stroke="#2e3a4d" stroke-width="1"/><circle cx="272" cy="258" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="279" y1="258" x2="341" y2="258" stroke="#2e3a4d" stroke-width="1"/><circle cx="348" cy="258" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="355" y1="258" x2="417" y2="258" stroke="#2e3a4d" stroke-width="1"/><circle cx="424" cy="258" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="431" y1="258" x2="493" y2="258" stroke="#2e3a4d" stroke-width="1"/><circle cx="500" cy="258" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="507" y1="258" x2="569" y2="258" stroke="#2e3a4d" stroke-width="1"/><circle cx="576" cy="258" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><line x1="583" y1="258" x2="645" y2="258" stroke="#2e3a4d" stroke-width="1"/><circle cx="652" cy="258" r="6" fill="#10151f" stroke="#2e3a4d" stroke-width="1.5"/><polyline points="120,66 196,98 272,98 348,130 424,162 500,162 576,226 652,226" fill="none" stroke="#f0b429" stroke-width="2.5" stroke-linejoin="round"/><circle cx="120" cy="66" r="6" fill="#f0b429"/><circle cx="196" cy="98" r="6" fill="#f0b429"/><circle cx="272" cy="98" r="6" fill="#f0b429"/><circle cx="348" cy="130" r="6" fill="#f0b429"/><circle cx="424" cy="162" r="6" fill="#f0b429"/><circle cx="500" cy="162" r="6" fill="#f0b429"/><circle cx="576" cy="226" r="6" fill="#f0b429"/><circle cx="652" cy="226" r="6" fill="#f0b429"/><text x="20" y="44" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">target</text><text x="120" y="304" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">frame →</text><text x="740" y="304" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="end" dominant-baseline="middle">400 columns, 7 rows</text><text x="380" y="334" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#d99e2b" text-anchor="middle" dominant-baseline="middle">a cell holds the total probability of all paths reaching it</text></svg>
+<figcaption>Exponentially many paths, polynomially many states those paths can be in. The same trick as any dynamic program.</figcaption>
+</figure>
 
-<p>One architectural consequence, and it shapes your whole system: barge-in
-means detecting speech while the agent is talking. VAD is sub-millisecond so it
-can run inline, but recognition and synthesis take hundreds of milliseconds. If
-either of them runs on your event loop, the agent cannot hear you while it
-speaks. Decide your threading model here, not later.</p>
+<p>In code this is one line, <code>torch.nn.CTCLoss</code>. It's worth
+understanding anyway, because the edge cases bite. If the target is longer than
+the number of frames there's no valid path at all, and with
+<code>zero_infinity=True</code> PyTorch substitutes a zero gradient instead of raising. Pick a bad vocabulary and you'll silently train on a fraction of your
+data while everything appears to work.</p>
 
-<h2>The alignment problem, and how CTC dodges it</h2>
+<h3>Piece three: decoding, where the same sum comes back</h3>
 
-<p>Here's the core difficulty of recognition. You have 400 audio frames and
-three characters, and nothing tells you which frames belong to which character.
-Hand-labelling that at scale isn't happening.</p>
+<p>At inference you want the most likely text, but the model gives you per-frame
+symbol probabilities. Greedy decoding takes the argmax at each frame and
+collapses it, which commits to a single alignment. Probably not what you want: the most likely alignment isn't the most likely text, because a text's probability is spread across many alignments.</p>
 
-<p>CTC's move is to refuse the question. You define a many-to-one collapse —
-merge repeated symbols, drop blanks, then sum the probability of every
-frame labelling that collapses to your target. A forward-backward recursion
-makes that sum tractable. You never commit to one alignment; you score all of
-them at once.</p>
+<p>Prefix beam search fixes that by scoring text prefixes instead of paths. Its
+one subtlety is exactly the one you would predict: each prefix has to track two
+probabilities, one for ending in a blank and one for ending in a real symbol.
+Without that split you can't distinguish "the model repeated the o" from "the
+model wrote a second o". It's the "too" versus "to" question again, and it will
+bite you in the decoder if you skipped it in the loss.</p>
 
-<p>The blank symbol does two jobs that are easy to conflate, and understanding
-both is most of understanding CTC:</p>
+<h2>The flaw that defines everything after CTC</h2>
 
-<ul>
-<li>it lets the model emit nothing at a frame it's unsure about, and that's what makes the many-to-one
-collapse work at all;</li>
-<li>it separates genuine repeats. Without a blank between them, "hello"
-collapses to "helo".</li>
-</ul>
+<p>Look at how the loss factorises: the model emits each frame's symbol
+independently, given the audio. Frame 200 doesn't know what frame 199 emitted.
+Nothing in the model knows that a <code>q</code> is followed by a <code>u</code>,
+or that "shold" isn't a word.</p>
 
-<p>Here's what a CTC model looks like when it's working acoustically and has no language model. Expect this early on:</p>
+<p>Here's my Module 2 recognizer, a BiGRU with a CTC head trained on real
+LibriSpeech:</p>
 
 <pre><code>hyp: he inl san er mianthes tlen kis roint the stieia sord meai wen
 ref: but in less than five minutes the staircase groaned beneath an
      extraordinary weight</code></pre>
 
-<p>Rhythm's roughly right. Syllable count's roughly right. What's absent is any
-notion that English words are a finite set — and that's structural, not a bug.
-CTC assumes conditional independence between output frames given the audio,
-and that's precisely a statement that it has no language model. If your early
-output looks like this, the model is learning; it just has nothing telling it
-which sounds are words.</p>
+<p>Notice what kind of wrong this is, because it matters. The rhythm is right. Many vowels are
+right. It's not acoustically stupid, it's <em>orthographically impossible</em>
+— no English word looks like "mianthes". That's not a bug to fix with more
+data. It's structural, and it's what acoustics sound like with no language
+model attached.</p>
 
-<h2>Choosing your architecture</h2>
-
-<p>The three real options, and when each is right:</p>
+<p>There are exactly two ways out, and they're the next two architectures: bolt
+a language model onto the beam search from outside, or put one inside the network
+by letting it condition on what it has already emitted.</p>
 
 <div class="tablewrap">
 <table>
-<thead><tr><th>Approach</th><th>Language model</th><th>Streams?</th><th>Use when</th></tr></thead>
+<thead><tr><th>Family</th><th>Where the alignment comes from</th><th>Language model?</th><th>Streams?</th></tr></thead>
 <tbody>
-<tr><td>CTC</td><td>none, needs an external one</td><td>trivially</td><td>cheapest, and a good first build</td></tr>
-<tr><td>RNN-T</td><td>internal, over output history</td><td>yes, monotonic</td><td>the production default for streaming</td></tr>
-<tr><td>Attention encoder-decoder</td><td>strongest</td><td>badly, and can hallucinate</td><td>offline accuracy, e.g. Whisper</td></tr>
+<tr><td>CTC</td><td>emit a symbol or blank per frame, sum over all collapsings</td><td>no, the defining flaw</td><td>yes, with a causal encoder</td></tr>
+<tr><td>RNN-T</td><td>a learned joiner decides: emit another token, or advance a frame</td><td>yes, a prediction network over output history</td><td>yes, its reason to exist</td></tr>
+<tr><td>Attention enc-dec</td><td>a decoder softly attends over all frames</td><td>yes, the decoder is one</td><td>not naturally, wants the whole utterance</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Hybrid CTC/attention is what I'd recommend building: one encoder, two heads.
-CTC's monotonicity acts as a stabiliser while the decoder supplies the language
-modelling, and each covers the other's structural weakness.</p>
+<p>That table is more or less the whole map. Whisper is the third row, and that's why its output has correct spelling and punctuation, and also why it hallucinates fluent
+sentences over silence: a language model with a microphone keeps talking. Two of
+my pipeline choices exist only to manage that. The endpointer never sends blips
+under 250 ms, and <code>condition_on_previous_text=False</code> stops
+hallucination loops compounding across turns.</p>
 
-<p>Swapping a BiGRU+CTC baseline for a Conformer with that hybrid setup, on
-identical audio, is the single biggest win available:</p>
+<h2>Building the recognizer that follows from this</h2>
 
-<div class="kpi">
-  <div class="box"><span class="v">1.076 to 0.607</span><span class="k">word error, 44% relative</span></div>
-  <div class="box"><span class="v">0.658 to 0.276</span><span class="k">character error, 58% relative</span></div>
-  <div class="box"><span class="v">2.7x</span><span class="k">faster inference</span></div>
-  <div class="box"><span class="v">0</span><span class="k">extra training data</span></div>
-</div>
+<p>Given the map, the design writes itself: put a CTC head and an attention
+decoder on one shared encoder. CTC's monotonic alignment stops the attention
+wandering, and the decoder supplies the language model CTC can't have.</p>
 
 <figure>
 <svg viewBox="0 0 830 238" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Conformer encoder with CTC and attention decoder heads"><title>Conformer encoder with CTC and attention decoder heads</title><rect x="24" y="40" width="150" height="70" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="99" y="75" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">log-mel</text><line x1="178" y1="75" x2="205" y2="75" stroke="#d99e2b" stroke-width="2.5"/><path d="M214 75 L203 69 L203 81 Z" fill="#d99e2b"/><rect x="218" y="40" width="170" height="70" rx="10" fill="#161d29" stroke="#2e3a4d" stroke-width="2"/><text x="303" y="64" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">subsample ×4</text><text x="303" y="88" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">16× cheaper</text><line x1="392" y1="75" x2="419" y2="75" stroke="#d99e2b" stroke-width="2.5"/><path d="M428 75 L417 69 L417 81 Z" fill="#d99e2b"/><rect x="432" y="40" width="180" height="70" rx="10" fill="#161d29" stroke="#f0b429" stroke-width="2"/><text x="522" y="64" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="middle" dominant-baseline="middle">12 × Conformer</text><text x="522" y="88" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">28M params</text><path d="M616 75 L650 75 L650 34 L684 34" fill="none" stroke="#d99e2b" stroke-width="2.5"/><path d="M696 34 L684 28 L684 40 Z" fill="#d99e2b"/><path d="M616 75 L650 75 L650 116 L684 116" fill="none" stroke="#d99e2b" stroke-width="2.5"/><path d="M696 116 L684 110 L684 122 Z" fill="#d99e2b"/><text x="700" y="34" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#5ec27e" text-anchor="start" dominant-baseline="middle">CTC head</text><text x="700" y="116" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#7aa2d8" text-anchor="start" dominant-baseline="middle">decoder</text><text x="24" y="158" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#5ec27e" text-anchor="start" dominant-baseline="middle">CTC</text><text x="80" y="158" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="start" dominant-baseline="middle">monotonic, streams, no language model</text><text x="24" y="186" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#7aa2d8" text-anchor="start" dominant-baseline="middle">decoder</text><text x="110" y="186" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="start" dominant-baseline="middle">has the language model, attention can wander</text><text x="24" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" fill="#f0b429" text-anchor="start" dominant-baseline="middle">together</text><text x="120" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="start" dominant-baseline="middle">each covers the other's weakness, one encoder pays</text></svg>
-<figcaption>One encoder, two heads. Each covers the other's structural weakness.</figcaption>
+<figcaption>Two heads, one encoder. Each covers the other's structural weakness.</figcaption>
 </figure>
 
 <p>Two things there matter when you build it. The ×4 subsampling
-before the blocks makes everything 16× cheaper and costs you nothing, so do it
-first. And two thirds of each block is feed-forward — attention is the smallest
-learned part, the opposite of what the name suggests, and useful to know when
-you're deciding what to shrink.</p>
+before the blocks makes self-attention 16× cheaper (it's O(T²)) and costs
+nothing, so do it first. And two thirds of each block is feed-forward, which
+means attention is the smallest learned part of a Conformer, the opposite of
+what the name suggests.</p>
 
-<h2>Making it stream, for 3%</h2>
+<p>Swapping the 2015 architecture for this one, on identical audio, is the
+single biggest win available:</p>
 
-<p>Streaming gets discussed as a quality sacrifice. At this scale it's a
-rounding error, and it takes two changes that only work together:</p>
+<figure>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Word error rate compared against training hours"><title>Word error rate compared against training hours</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Word error rate, and what it cost to get there</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">lower is better · my two models trained on identical audio</text><text x="206" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">BiGRU + CTC</text><path d="M220 62 h383.36 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-383.36 z" fill="#b5790a"/><text x="619.36" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">1.076</text><text x="619.36" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">4.1 h of audio</text><text x="206" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">Conformer, hybrid</text><path d="M220 108 h214.51999999999998 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-214.51999999999998 z" fill="#b5790a"/><text x="450.52" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.607</text><text x="450.52" y="138" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">4.1 h, same audio</text><text x="206" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">Whisper base.en</text><path d="M220 154 h7.880000000000001 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-7.880000000000001 z" fill="#4f7fb8"/><text x="243.88" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.033</text><text x="243.88" y="184" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">680,000 h</text><text x="20" y="218" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Whisper saw 165,000× the data. Quoting 0.607 next to 0.033 without that is</text><text x="20" y="239" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">dishonest.</text></svg>
+<figcaption>44% relative on word error, 58% on character error, no extra data.</figcaption>
+</figure>
 
-<ul>
-<li><strong>Chunked attention masking</strong>, so a frame attends within its
-chunk plus some history.</li>
-<li><strong>A causal depthwise convolution</strong>, left-padded only.
-Skip this and the conv leaks about 15 frames of future context, which makes the
-attention mask you carefully wrote a fiction.</li>
-</ul>
+<h2>Streaming costs three percent</h2>
+
+<p>Two changes, and they only work together. Attention gets chunked masking so a
+frame attends within its chunk plus some history. Your depthwise convolution has to become causal, left-padded only, because otherwise it leaks about 15 frames
+of future context and the attention mask you carefully wrote is a fiction.</p>
 
 <p>Resample the chunk size every batch during training and one set of weights
-serves every latency operating point. Measured cost: word error goes 0.607 to
-0.627 for 640 ms of lookahead, roughly 3% relative.</p>
+then serves every latency operating point.</p>
 
-<p>Pick an architecture that streams by construction even if you don't need it
-yet. Retrofitting means changing the convolution, and changing the convolution
-means retraining.</p>
+<figure>
+<svg viewBox="0 0 760 214" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Word error with and without streaming lookahead"><title>Word error with and without streaming lookahead</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">What streaming costs</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">same weights, chunk size resampled every batch</text><text x="186" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">full context</text><path d="M200 62 h392.2361111111111 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-392.2361111111111 z" fill="#b5790a"/><text x="608.2361111111111" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.607</text><text x="186" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">640 ms lookahead</text><path d="M200 108 h405.2916666666667 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-405.2916666666667 z" fill="#b5790a"/><text x="621.2916666666667" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">0.627</text><text x="621.2916666666667" y="138" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">+3.3% relative</text><text x="20" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Streaming gets discussed as a quality sacrifice. At this scale it is a</text><text x="20" y="193" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">rounding error.</text></svg>
+<figcaption>Pick an architecture that streams by construction. Retrofitting means changing the convolution, which means retraining.</figcaption>
+</figure>
 
-<h2>Things that will cost you a day each</h2>
+<h2>The failure that no metric could see</h2>
 
-<p>These are the ones I'd want to have been told:</p>
+<p>My model discovered that emitting blank on every frame is a safe answer with
+a finite loss, and converged into it. 100% of frames decoding to blank, mean
+P(blank) 0.89, output entropy 0.82 nats out of a possible 6.93. Greedy decoding
+returned the empty string.</p>
+
+<figure>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three training signals during a CTC blank collapse"><title>Three training signals during a CTC blank collapse</title><text x="20" y="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">One failure, three instruments</text><text x="20" y="46" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">what each signal showed while the model emitted nothing at all</text><text x="232" y="82" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">a healthy run</text><text x="500" y="82" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">the collapsed run</text><text x="672" y="82" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">verdict</text><rect x="20" y="90" width="720" height="44" rx="8" fill="none" stroke="#2e3a4d" stroke-width="1"/><text x="34" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">CTC loss</text><text x="232" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">falls, plateaus, falls off a cliff</text><text x="500" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">flat at 5.88 for 2,000 steps</text><text x="672" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">looks like a plateau</text><rect x="20" y="142" width="720" height="44" rx="8" fill="none" stroke="#2e3a4d" stroke-width="1"/><text x="34" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">held-out WER</text><text x="232" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">falls after the CTC cliff</text><text x="500" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#93a0b4" text-anchor="middle" dominant-baseline="middle">0.978 → 1.000 → 0.995</text><text x="672" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">looks like early training</text><rect x="20" y="194" width="720" height="44" rx="8" fill="#161d29" stroke="#b5790a" stroke-width="2"/><text x="34" y="216" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">blank-frame fraction</text><text x="232" y="216" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="middle" dominant-baseline="middle">rises to 0.85–0.95, then comes down</text><text x="500" y="216" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600" fill="#b5790a" text-anchor="middle" dominant-baseline="middle">pinned at 1.0000</text><text x="672" y="216" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#b5790a" text-anchor="middle" dominant-baseline="middle">unambiguous</text><text x="20" y="284" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">Only the third one can tell the difference, and it costs one line to log.</text></svg>
+<figcaption>Log a signal specific to the failure mode. Loss and the headline metric are both blind to this one.</figcaption>
+</figure>
+
+<p>The literature calls this blank-dominated convergence, and it's a property of local minima in CTC, not something unique to my code. What made it
+expensive is that both instruments I was watching read as "be patient".</p>
+
+<p>Then I nearly learned the wrong lesson from it. My theory was that the
+subword vocabulary of 1024 was too large, and the fix was restarting at 256. I
+was about to spend three days on that. Instead I spent an hour reading reference
+recipes, and found ESPnet uses 5,000 subwords on this same corpus for 8.4% word
+error. The vocabulary was never the problem.</p>
+
+<figure>
+<svg viewBox="0 0 760 306" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Warmup steps in my run versus reference recipes"><title>Warmup steps in my run versus reference recipes</title><text x="20" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">Learning-rate warmup steps</text><text x="20" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">the hyperparameter I was about to not investigate</text><text x="196" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">mine (collapsed)</text><path d="M210 62 h13.25 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-13.25 z" fill="#b5790a"/><text x="239.25" y="73" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">1,500</text><text x="239.25" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="400" fill="#76818f" text-anchor="start" dominant-baseline="middle">CTC went flat at ~1,200 and never recovered</text><text x="196" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">ESPnet</text><path d="M210 108 h168.5 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-168.5 z" fill="#4f7fb8"/><text x="394.5" y="119" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">15,000</text><text x="196" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">SpeechBrain</text><path d="M210 154 h168.5 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-168.5 z" fill="#4f7fb8"/><text x="394.5" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">15,000</text><text x="196" y="211" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="400" fill="#93a0b4" text-anchor="end" dominant-baseline="middle">WeNet / K2</text><path d="M210 200 h341 a4 4 0 0 1 4 4 v14 a4 4 0 0 1 -4 4 h-341 z" fill="#4f7fb8"/><text x="567" y="211" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="600" fill="#dde3ec" text-anchor="start" dominant-baseline="middle">25,000–35,000</text><text x="20" y="264" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">An hour reading reference recipes beat three days shrinking a vocabulary</text><text x="20" y="285" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="400" fill="#d99e2b" text-anchor="start" dominant-baseline="middle">that was fine.</text></svg>
+<figcaption>Too fast a rise locks CTC into the all-blank minimum, and it does not come back out.</figcaption>
+</figure>
+
+<p>Had I "fixed" the vocabulary and had it happened to work, I would have
+learned something false and kept it permanently. That's the real hazard of
+hyperparameter archaeology by guessing.</p>
+
+<h2>The two stages before the recognizer</h2>
+
+<p>Briefly, because they're where the easy wins are.</p>
+
+<p><strong>Your VAD is probably a data problem wearing a model's clothes.</strong> A
+frame-level detector needs about 55,000 parameters, small enough that you can
+stop blaming architecture. Mine reported <code>P(speech) = 1.0</code> on room
+noise with nobody talking. Same architecture, same training loop, corrected
+data, and the same input scores 0.04. Write your evaluation set before you train
+anything, and make it the specific things you expect to break: digital silence,
+mains hum, babble, speech recorded too quietly. Mine took ten minutes and then
+chose which checkpoint shipped, because the best hard-case score was 0.806 at step 2750 while the final step scored 0.699. Last is rarely best.</p>
+
+<p><strong>Endpointing should contain no model.</strong> It's a state machine
+over VAD output plus a hangover timer, and all the content is in the policy. Use
+two layers: the acoustic one tells you a pause happened, and a linguistic one
+decides whether the turn ended, because people pause mid-sentence constantly. If
+the utterance sounds finished, commit after 300 ms; if it trails off on "and",
+"so", "because", "um", wait 950 ms. A redemption window of 320 ms stops a breath
+ending a turn, and a 220 ms pre-speech pad keeps the onset consonant the VAD
+would otherwise clip.</p>
+
+<p>Endpointing also decides your threading model, which surprised me. Barge-in
+means detecting speech while the agent is talking. VAD is sub-millisecond so it
+can run inline, but recognition and synthesis take hundreds of milliseconds, and
+if either runs on the event loop the agent can't hear you while it speaks.</p>
+
+<h2>Other things that will cost you a day</h2>
 
 <ul>
-<li><strong>Warm up over ~15,000 steps, not 1,500.</strong> Too fast a rise
-locks CTC into the all-blank minimum and it doesn't come back. Mine collapsed to
-100% blank frames, entropy 0.82 of a possible 6.93, decoding to an empty string
-— and neither the loss (flat, plausible) nor word error (pinned at 1.0, same as
-an untrained model) could see it. Log blank-frame fraction; it goes to 1.0
-immediately.</li>
-<li><strong>Read the reference recipe before changing hyperparameters.</strong>
-I was about to spend three days shrinking a 1024 vocabulary. ESPnet uses 5,000
-on the same corpus for 8.4% word error. The vocabulary was never the problem.</li>
 <li><strong>Hold out speakers, not utterances.</strong> My held-out set shared
 39 of 39 speakers with training, so every number I'd quoted was
 speaker-dependent and not comparable with anything published.</li>
@@ -203,29 +266,30 @@ speaker-dependent and not comparable with anything published.</li>
 checkpoints orbit one basin. Mine spanned 0.86 to 0.61, so averaging the last
 five gave 0.659 against a best single of 0.612. Average the best K by held-out
 error, and keep it only if it wins.</li>
-<li><strong><code>zero_infinity=True</code> hides infeasible samples.</strong>
-If a target is longer than the encoder output, CTC is impossible and PyTorch
-substitutes a zero gradient instead of raising. A bad vocabulary silently trains
-on a fraction of your data.</li>
-<li><strong>Verify the GPU by using it.</strong> <code>torch.cuda.is_available()</code>
-returned True twice on machines where a convolution then failed. Run a real
-convolution in your bootstrap and look at the result.</li>
+<li><strong>Don't regularise a model that hasn't learned the task.</strong>
+With SpecAugment on from step 0, CTC reached 1.06 by step 400. With it off,
+0.13. Augmentation is worth more than data below about 1,000 hours, but only
+after the model has something to regularise.</li>
+<li><strong>Verify the GPU by using it.</strong>
+<code>torch.cuda.is_available()</code> returned True twice on machines where a
+convolution then failed, once on a CUDA 13 wheel against a CUDA 12 driver and
+once on cuDNN 9.20 against a 9.10 driver.</li>
 </ul>
 
-<h2>What to expect at the end</h2>
+<h2>What you get at the end</h2>
 
-<p>My recognizer gets 0.607 word error. Whisper base.en gets 0.033. It also saw
-680,000 hours against my 100, a 165,000× data advantage, and quoting one number
-next to the other without that ratio would be dishonest.</p>
+<p>0.607 word error, against Whisper base.en at 0.033. You aren't going to win,
+and that's not the point of building it.</p>
 
-<p>So don't build this to win. Build it because "the gap is data" turns out to be
-false as a general claim, and you can only find that out by moving one thing at
-a time. For the VAD the gap really was data. For synthesis it was architecture.
-For recognition it's data, architecture, recipe and inference all at once — and
-after this you'll be able to tell which one you're looking at, and that beats the model.</p>
+<p>What you get instead is that "the gap is data" turns out to be false as a general claim,
+and you can only find that out by moving one thing at a time. For the VAD the
+gap really was data, and fixing the data fixed the model. For synthesis it's
+architecture. For recognition it's data, architecture, recipe and inference all
+at once. After doing this you can tell which one you're looking at, and that
+transfers to problems that have nothing to do with speech.</p>
 
-<p>The module-by-module code, with the training runs, is in the repo under
-<code>docs/</code>.</p>
+<p>The module-by-module code, the training runs and the full failure catalogue
+are in the repo under <code>docs/</code>.</p>
 
 </main>
 </body>
