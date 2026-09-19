@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How text to speech actually works: durations, attention, vocoders</title>
+<meta name="description" content="A build guide to speech synthesis: why the acoustic model has to invent durations, the four tricks that make attention train, why Griffin-Lim is a ceiling, and how to choose a neural vocoder." />
+<meta name="date" content="2026-06-06" />
+<meta name="tags" content="text to speech, tts, vocoder, speech synthesis, pytorch" />
+</head>
+<body>
+<main>
+
+<p>Speech synthesis splits cleanly into two problems that fail in completely
+different ways, and most of the confusion I see probably comes from treating them as one.
+This walks through both: how text becomes a spectrogram, how a spectrogram
+becomes sound, and which decisions at each stage actually determine whether the
+output is intelligible.</p>
+
+<div class="diagram"><span class="m">"the old man's eyes"</span>          <span class="m">~19 characters</span>
+        │
+        ▼  <span class="a">acoustic model</span>          <span class="m">learned: durations, prosody, pronunciation</span>
+<span class="c">log-mel spectrogram (T×80)</span>   <span class="w">~250 frames, and who decides T?</span>
+        │
+        ▼  <span class="a">vocoder</span>                 <span class="m">signal problem: invert a lossy transform</span>
+<span class="c">waveform @ 16 kHz</span>            <span class="m">~40,000 samples</span></div>
+
+<p>Text to mel is a sequence problem: durations, prosody, pronunciation. Mel to
+waveform is a signal problem: inverting a transform that threw information away.
+Modern end-to-end systems fuse the two for quality, but you can't see why fusing
+helps until you've felt the seam, so build them separately first.</p>
+
+<h2>Why synthesis is harder than recognition</h2>
+
+<p>If you've built a recognizer, you've met the alignment problem: 400 audio
+frames, three characters, and nothing saying which frames belong to which
+character. CTC handles it by refusing to choose, summing over every possible
+alignment.</p>
+
+<p>Run it backwards and that escape route disappears.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th></th><th>Recognition</th><th>Synthesis</th></tr></thead>
+<tbody>
+<tr><td>you're given</td><td>400 frames, 3 characters</td><td>19 characters</td></tr>
+<tr><td>you produce</td><td>the text</td><td>250 frames, and you decide it's 250</td></tr>
+<tr><td>the alignment is</td><td>hidden in the audio, waiting</td><td>not there at all, you invent it</td></tr>
+<tr><td>sum over all of them?</td><td>yes, that's CTC</td><td>no, you emit one sequence</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>That last row is the whole difficulty. CTC stays agnostic because it only
+scores a target you already hold. A synthesizer produces the output, so at every
+step it commits: is the "o" in "go" finished, or does it hold another 40 ms? Get
+that wrong repeatedly and you don't get a slightly wrong transcript. You get
+speech that stutters, skips syllables, or never stops.</p>
+
+<h2>The acoustic model, and the four tricks it needs</h2>
+
+<p>Tacotron's answer is to generate mel frames one step at a time, using
+attention over the text at each step to answer "which character am I on?". The
+attention <em>is</em> the alignment, built as it goes.</p>
+
+<div class="diagram"><span class="m">every decoder step (= r mel frames):</span>
+  <span class="a">1</span> prenet(previous frame)          <span class="m">"what did I just say?"</span>
+  <span class="a">2</span> attention over encoder states   <span class="m">"which characters am I on?"</span>  <span class="w">← the core</span>
+  <span class="a">3</span> GRU state update                <span class="m">"remember where I am"</span>
+  <span class="a">4</span> project [state, context] → r×80 <span class="m">"paint the next slice of mel"</span>
+  <span class="a">5</span> stop head → P(done)             <span class="m">"am I finished talking?"</span></div>
+
+<p>Four things make that trainable, and you need all four:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Trick</th><th>What it does</th><th>Without it</th></tr></thead>
+<tbody>
+<tr><td>Teacher forcing</td><td>feed the true previous frame during training</td><td>early training compounds its own garbage</td></tr>
+<tr><td>Prenet dropout, on at inference too</td><td>stops the decoder copying the previous frame forward</td><td>fluent, confident mumble, uncorrelated with the text</td></tr>
+<tr><td>Reduction factor r=2</td><td>predict 2 frames per step</td><td>attention takes much longer to form</td></tr>
+<tr><td>Location-sensitive attention</td><td>previous alignment through a conv into the scorer</td><td>stutters and skips characters</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The second one deserves a note because it looks like a bug you'd fix. Leaving
+dropout active at inference is deliberate: the previous-frame path is so
+informative that the decoder will happily copy it forward and ignore the text
+entirely. Turn it off and you get speech that sounds completely fluent and has
+nothing to do with what you asked for.</p>
+
+<h2>Watch the alignment map, not the loss</h2>
+
+<p>This is the single most useful thing I can tell you about training a
+synthesizer.</p>
+
+<p>Mel L1 loss falls early just by predicting blurry average speech. Mine went
+0.81 to 0.24, smoothly, over 3,000 steps — the shape of curve you screenshot and
+feel good about — while the model learned essentially nothing. The free-running
+attention map was a smear with no diagonal. Generation cut out at 2.2 seconds on
+an 82-character sentence.</p>
+
+<p>A diagonal forming in the attention map means it's working. A smear means it
+isn't. The loss cannot distinguish those two states, so plot the alignment every
+few hundred steps and look at it.</p>
+
+<p>If the diagonal won't form, the fix usually isn't more data. Maybe eventually, but not yet. Guided attention
+adds a penalty <code>mean(A · W)</code> where
+<code>W[t,n] = 1 − exp(−(n/N − t/T)² / 2g²)</code>, taxing attention mass far
+from the diagonal and leaving mass near it free. It's a prior saying "time moves
+forward", not a constraint, and with enough data you'd drop it. With 19 training
+utterances it took alignment from never forming to forming in hundreds of
+steps.</p>
+
+<h2>Scoring it without a listening panel</h2>
+
+<p>Mel L1 says nothing about intelligibility. If you've already built a
+recognizer, use it: transcribe the synthesizer's output and measure character
+error against the text it was asked to say.</p>
+
+<p>Build that judge early, because quality oscillates while the loss slides steadily downward. Mine swung between 0.96 and 0.61 character error across a run with
+three separate regressions, and picked step 8,000 of 10,000. Taking the final
+checkpoint would have shipped something clearly worse for no reason except that
+it came last.</p>
+
+<h2>Griffin-Lim is a ceiling, and you should plan to leave it</h2>
+
+<p>Computing a log-mel throws the phase away. Griffin-Lim recovers a phase by
+exploiting frame overlap: guess, inverse transform, re-measure, keep your
+magnitude, repeat about 60 times. After that, magnitude and phase are
+self-consistent.</p>
+
+<p>Self-consistent isn't correct. Many phase fields are consistent with the same
+magnitude spectrogram, and the one Griffin-Lim converges to generally isn't the
+one a speaker produced. That mismatch is the phasey, metallic, slightly
+underwater quality you hear in every Griffin-Lim sample.</p>
+
+<div class="callout">
+<span class="label">Why this gap is different</span>
+Almost everywhere else in a speech stack, more data helps. Here it can't, at any
+quantity, because the limitation isn't in a learned component at all.
+Griffin-Lim has zero parameters. Train your acoustic model on ten thousand hours
+and the output is still phasey. If your synthesis sounds robotic, replace the
+vocoder before you collect more speech.
+</div>
+
+<h2>Choosing a vocoder</h2>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th></th><th>Time domain (HiFi-GAN)</th><th>Spectral (Vocos, iSTFTNet)</th></tr></thead>
+<tbody>
+<tr><td>predicts</td><td>every output sample</td><td>magnitude and phase per frame</td></tr>
+<tr><td>upsamples via</td><td>transposed convolutions, 160× total</td><td>one exact inverse STFT</td></tr>
+<tr><td>cost per second</td><td>16,000 predictions</td><td>100 frames</td></tr>
+<tr><td>needs a GAN?</td><td>yes, or it sounds muffled</td><td>no, good without and better with</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The insight behind the spectral family is that making a waveform was never
+the hard part. The inverse STFT does that exactly, for free, and has done since
+1977. Knowing the phase was the hard part. So predict the phase, run the exact
+inverse, and stop paying a network to rediscover arithmetic.</p>
+
+<p>For anything targeting a laptop CPU inside a turn-taking latency budget, I'd take the spectral one. Two orders of magnitude less compute per second of audio, and
+it clears Griffin-Lim trained on a multi-resolution STFT loss alone, so
+adversarial training becomes a later upgrade instead of a prerequisite.</p>
+
+<div class="diagram">log-mel (B, T, 80)
+   │
+   ▼ Conv1d(80 → d, k=7) + LayerNorm
+   ▼ <span class="a">N × ConvNeXt block</span>   <span class="m">depthwise k=7 → LN → Linear(d,3d) → GELU → Linear(3d,d)</span>
+   ▼ Linear(d → 2·257)      <span class="m">split: log-magnitude │ phase angle</span>
+   ▼ <span class="g">S = exp(mag) · e^(i·phase)</span>
+   ▼ <span class="g">exact inverse STFT</span>       <span class="m">overlap-add, nothing learned</span>
+waveform</div>
+
+<p>No attention anywhere in it. A vocoder needs a receptive field of a few tens
+of milliseconds, enough to place a glottal pulse, not a sentence. Convolutions
+supply that far more cheaply, and that's probably why every production vocoder you'll meet is convolutional.</p>
+
+<p>Match its STFT grid to the one your features already use — n_fft 512, window
+400, hop 160 in my case — and the mels your acoustic model emits drop straight
+in with no retraining.</p>
+
+<h2>Pick a metric that can see what you care about</h2>
+
+<p>I scored my neural vocoder against Griffin-Lim on multi-resolution STFT
+distance. Griffin-Lim won.</p>
+
+<p>It won because multi-resolution STFT is a magnitude metric, and magnitude
+consistency is literally the objective Griffin-Lim optimises. I'd picked a
+scoring function that measures the one thing the baseline is built to maximise.
+Adding SI-SDR, time-domain and so phase-sensitive, flipped it immediately: the neural model was 5.4 dB better.</p>
+
+<p>Before trusting any comparison, ask whether your metric measures the thing
+your baseline optimises. If it does, you've built a tautology.</p>
+
+<h2>If you want it in your own voice</h2>
+
+<p>Cloning is mostly a data-collection problem, and it's the one step here you
+can't parallelise, buy or download. An hour of speech is around 900 takes. At
+ten seconds of friction per take that's two and a half hours of pure overhead,
+which is how most voice datasets end up abandoned.</p>
+
+<p>So build the recording tool properly, and design it to remove decisions:</p>
+
+<ul>
+<li><strong>Hands free.</strong> Press return, read the sentence, stop talking,
+and your VAD ends the take. No second keypress across 900 sentences.</li>
+<li><strong>Check every take before it counts.</strong> Clipping, noise floor,
+silence padding, and whether a transcription matches the prompt. Catching a bad
+take costs five seconds now and a day after training.</li>
+<li><strong>Resumable at any instant</strong>, because nobody records 900
+sentences in one sitting.</li>
+<li><strong>Balance the corpus by greedy n-gram coverage</strong> when choosing
+prompts, so an hour of speech covers the sounds you need instead of the sentences you happened to pick.</li>
+</ul>
+
+<h2>Verifying a voice is a voice</h2>
+
+<p>If you go further and build speaker embeddings, the important design decision
+is that the training objective and the reported metric are deliberately
+different tasks. You train a classifier over known speakers, but you report
+equal error rate on speakers the model has never heard, scored by cosine
+distance on a fixed trial list. Training accuracy hitting 100% only means it
+memorised 32 voices.</p>
+
+<p>And check your confidence interval before believing any A/B. A held-out split
+of 8 speakers gives an equal error rate with a bootstrap interval several points
+wide — wider than most of the differences you'd want to test, like angular
+margin against plain softmax. Print the interval, the median across evaluations
+and the best checkpoint separately, so they can't be quietly confused.</p>
+
+<p>On a split that small, the honest answer to "does the angular margin help?" is
+that the experiment can't tell you. Knowing which of your results are real is
+the part that transfers to the next project.</p>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to build a local AI assistant that answers in two seconds</title>
+<meta name="description" content="A build guide for an always-on voice assistant running on one laptop: the latency budget stage by stage, two-layer turn detection, barge-in, and why the runtime matters more than the model for voice cloning." />
+<meta name="date" content="2026-09-12" />
+<meta name="tags" content="local ai, voice assistant, latency, apple silicon, mlx" />
+</head>
+<body>
+<main>
+
+<p>An assistant you talk to has one hard requirement: it has to answer fast
+enough that you don't feel the gap. Everything else is negotiable. This is how
+to build one that runs on a single laptop, hits about two seconds a turn, and
+keeps running after you close the window.</p>
+
+<p>All the numbers here come from an M4 MacBook Air with 16 GB, measured, not estimated, so you can size your own expectations against real hardware.</p>
+
+<h2>The budget is the architecture</h2>
+
+<p>Start by writing down what you can spend, because every component choice
+follows from it. Two seconds is roughly the limit before a spoken reply feels
+broken. Here's where mine goes:</p>
+
+<div class="diagram">  mic ──▶ <span class="a">Silero VAD</span> ──▶ <span class="a">Whisper (MLX)</span> ──▶ <span class="c">brain</span> ──▶ <span class="a">Kokoro</span> ──▶ speaker
+          <span class="m">~1ms/frame</span>       <span class="m">~0.3s</span>            <span class="m">0.67s</span>     <span class="m">0.2s</span>      <span class="m">48kHz</span>
+          <span class="g">local</span>            <span class="g">local, Metal</span>     <span class="w">remote</span>    <span class="g">local, Metal</span>
+
+  <span class="m">end of your sentence to start of hers:</span> <span class="w">about 2 seconds</span></div>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Stage</th><th>Choice</th><th>Where</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>Voice activity</td><td>Silero v5, 512-sample frames @16k</td><td>torch, CPU</td><td>negligible</td></tr>
+<tr><td>Endpointing</td><td>acoustic + linguistic policy</td><td>no model</td><td>300 to 950 ms</td></tr>
+<tr><td>Transcription</td><td>whisper-base.en</td><td>MLX / Metal</td><td>~0.3 s</td></tr>
+<tr><td>Brain</td><td>ministral-3b</td><td>remote</td><td>0.67 s</td></tr>
+<tr><td>Speech</td><td>Kokoro-82M</td><td>torch / MPS</td><td>13.2× realtime</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The thing to notice is that endpointing, which contains no model at all, is
+the second most expensive stage in the loop. If you're trying to get a voice
+agent under two seconds, that's where to look first — not at a smaller transcription model. Which model did you expect to be the bottleneck?</p>
+
+<h2>Turn detection needs two layers</h2>
+
+<p>Your VAD tells you a pause happened. It does not tell you the turn ended, and
+treating those as the same thing builds something that interrupts people
+constantly.</p>
+
+<p>Put a linguistic layer on top of the acoustic one:</p>
+
+<ul>
+<li>utterance sounds finished, commit after <strong>300 ms</strong></li>
+<li>it trails off on "and", "so", "because", "um", wait <strong>950 ms</strong>
+for more</li>
+<li>more speech arrives, append it and re-evaluate</li>
+</ul>
+
+<p>Two smaller constants matter as much as those. A redemption window of ~320 ms
+stops a breath from ending someone's turn. A pre-speech pad of ~220 ms keeps the
+onset consonant your VAD would otherwise clip — without it, "sixty" arrives as
+"ixty" often enough to be a real problem.</p>
+
+<h2>Plan for the microphone hearing the speaker</h2>
+
+<p>Design for this up front, because every component behaves correctly while the system as a whole fails.</p>
+
+<p>Speakers leak into the mic. So: the assistant speaks, the leak reaches the
+mic, VAD fires on her own voice, barge-in kills playback about 300 ms in,
+transcription runs on the leak, and the model answers it. Now she's talking
+again. That loop has no exit, and every individual piece did exactly what you
+asked.</p>
+
+<pre><code>(tts 1.97s for 2.4s of audio)
+(cut off)
+(cut off after 0.3s)
+you: ONE            &lt;- her own voice
+vela: One.</code></pre>
+
+<p>The fix is to ignore the mic while speaking, plus a tail of around 350 ms for
+the room to stop ringing. Re-enable barge-in when the user is on headphones,
+because then the premise is gone. The general lesson is that this class of bug
+only exists at the orchestrator level, so that's the layer you need to be able
+to reason about — it's also the layer with no paper to copy.</p>
+
+<h2>Match commands before you reach for the model</h2>
+
+<p>Opening an app, pausing music, setting a timer, asking the time — match all of
+these with regular expressions before any model call. It looks primitive next to
+routing everything through an LLM. Is it? I think so, for three reasons:
+they answer instantly, they answer identically every time, and nothing can talk
+them out of it. Anything unmatched falls through to conversation.</p>
+
+<p>The general version: wherever correct behaviour is fully specified, a model
+converts a guarantee into a probability. Sometimes that's a good trade. Make it
+deliberately.</p>
+
+<h2>Tell the model what it cannot do</h2>
+
+<p>Small models fail in a specific way that will undermine trust in your
+assistant faster than anything else: ask about a capability they don't have and
+they answer anyway. Ask a 3B model what's in your calendar and it'll invent a
+meeting, with a time.</p>
+
+<p>Put the absences in the prompt explicitly — no calendar, no email, no files,
+no battery, no location, no browser history, no screen access. That single
+addition moved my small models from 1 out of 4 to 4 out of 5 on a set of
+hallucination traps. They probably weren't lying so much as under-instructed:
+nothing in the context said those capabilities were absent, so the likeliest
+continuation was the world where they exist.</p>
+
+<h2>Memory: read it fresh every turn</h2>
+
+<p>SQLite is enough. Four tables carry different lifetimes: episodic (what
+happened), semantic (what's true), narrative (what it adds up to), and a ledger
+of predictions written down before they were tested.</p>
+
+<p>The design rule that makes it work is that the situation summary gets read from the database on every turn instead of living in the context window. Ask mine
+what training step a model grokked at and you get 5600, because that number is a
+row in the ledger. If it isn't in the database, she says she doesn't know.</p>
+
+<p>Adopt that constraint early. Every companion-style assistant I've
+seen dies the same way: it has nothing real to report, so it fabricates an inner
+life, and you feel the lie inside ninety seconds.</p>
+
+<h2>Voice cloning, and why it probably won't be fast</h2>
+
+<p>If you want the assistant to answer in your own voice, this is the part to
+understand before you spend a weekend on it.</p>
+
+<p>Profile by stage, and don't skip that step. My clone pipeline took 34.9
+seconds to produce 4.9 seconds of audio. The vocoder was 4.8 s of that and is
+fine. The token generator was 28.4 s — 81.3% of the time, one stage, 5.7× too
+slow. Every optimisation I'd been considering was aimed somewhere else.</p>
+
+<div class="kpi">
+  <div class="box"><span class="v">34.9s</span><span class="k">to speak 4.9s of audio</span></div>
+  <div class="box"><span class="v">81.3%</span><span class="k">in one stage</span></div>
+  <div class="box"><span class="v">4.4</span><span class="k">tokens/sec</span></div>
+  <div class="box"><span class="v">25</span><span class="k">needed for realtime</span></div>
+</div>
+
+<p>Why that stage is slow is architectural, not a tuning problem. It generates
+speech autoregressively: a 0.5B transformer emitting discrete speech tokens at 25 per second of audio, one at a time, each conditioned on every token before it.
+A five second reply is ~125 sequential forward passes that cannot be
+parallelised. Kokoro is fast because it isn't autoregressive — it predicts an entire mel spectrogram in essentially one shot. That difference is the entire 90×
+gap.</p>
+
+<h2>The runtime matters more than the model</h2>
+
+<p>Here's the comparison that should change how you pick components on Apple
+silicon, both measured on the same machine:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Model</th><th>Params</th><th>Runtime</th><th>Rate</th></tr></thead>
+<tbody>
+<tr><td>Qwen2.5</td><td>1.5B</td><td>MLX</td><td>~20 tok/s</td></tr>
+<tr><td>Chatterbox T3</td><td>0.5B</td><td>PyTorch / MPS</td><td>4.4 tok/s</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Three times the parameters, four and a half times the speed. Per parameter,
+that's MLX being roughly 13× more efficient.</p>
+
+<p>Why? Because of what autoregressive decoding actually is: memory-bandwidth bound, not compute bound. Every token means reading the entire weight matrix out of memory,
+and the arithmetic done with it is trivial by comparison. MLX uses unified
+memory properly and avoids per-kernel launch overhead; MPS does neither well. If
+your model also runs classifier-free guidance that's two forward passes per
+token, so double the bandwidth again — dropping the guidance weight to 0.3
+bought me about 2×.</p>
+
+<p>So if you're choosing components for on-device inference on a Mac, check what
+runtime they ship for before you compare model sizes. It's a bigger lever.</p>
+
+<h2>Practical notes</h2>
+
+<ul>
+<li><strong>Always discard the first run.</strong> My first benchmark said 0.05×
+realtime for short text and 0.29× for longer text, which is impossible — longer
+input can't take proportionally less time. Warmup had landed entirely on the
+first call. Warm, it's 0.59×.</li>
+<li><strong>Report thermal state.</strong> On a fanless machine an hour into
+work, numbers move meaningfully. Say which run, how warm, how many.</li>
+<li><strong>Keep a model warm in a separate process.</strong> Mine pays 11.5 s
+load and 5.3 s warmup once instead of per reply.</li>
+<li><strong>Degrade loudly, not silently.</strong> If the clone service is
+down, the assistant uses the fast voice and logs why, instead of going
+quiet.</li>
+<li><strong>Cache your common phrases.</strong> "I'm here", "Opening Chrome",
+"Paused", "It's 11:40 p.m." repeat constantly. Pre-synthesise the top fifty in
+the good voice, hash-key them, fall back to the fast model for novel sentences.
+Cheapest win available, and I'd do this before porting anything.</li>
+</ul>
+
+<p>If you build one of these, the part that'll surprise you is how little of the
+work is model selection. It's a latency budget, a turn-taking policy, and a
+feedback loop between your speaker and your microphone.</p>
+
+</main>
+</body>
+</html>

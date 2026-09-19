@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How I built a speech recognizer from scratch, layer by layer</title>
+<meta name="description" content="A working guide to the listening half of a voice agent: log-mel features, a frame-level VAD, endpointing policy, CTC and the alignment problem, and the Conformer choices that halved word error and still stream." />
+<meta name="date" content="2026-05-09" />
+<meta name="tags" content="speech recognition, asr, ctc, conformer, pytorch" />
+</head>
+<body>
+<main>
+
+<p>This is how to build the listening half of a voice agent without calling
+anyone's API: features, voice activity detection, endpointing, and the
+recognizer itself. By the end you should know what each stage is actually
+solving, which design choices matter, and which ones you can copy from a
+reference recipe and stop thinking about.</p>
+
+<p>I'll give you the numbers from my own runs, because a recommendation with no
+measurement behind it is just an opinion.</p>
+
+<div class="diagram">   <span class="m">mic</span>
+    │
+    ▼
+ <span class="a">DENOISE</span> ──▶ <span class="a">VAD</span> ──▶ <span class="a">ENDPOINT</span> ──▶ <span class="a">ASR</span> ──▶ <span class="m">LLM</span> ──▶ <span class="m">TTS</span>
+    │         │          │           │
+ <span class="m">"cleaner?"</span>  <span class="m">"speech?"</span>  <span class="m">"finished?"</span>  <span class="m">"what words?"</span>
+    │         │          │           │
+ <span class="g">OM-LSA</span>   <span class="g">conv net</span>  <span class="g">state machine</span>  <span class="g">Conformer</span>
+ <span class="m">0 params</span>   <span class="m">55K</span>       <span class="m">no model</span>       <span class="m">28M</span></div>
+
+<p>The first thing to internalise is that these four boxes are four different
+kinds of problem, and the tools don't transfer between them. Denoising is signal
+processing. VAD is binary classification. Endpointing is policy with no model in
+it. Recognition is sequence transduction with an alignment problem underneath.
+Most of the time I got stuck, it was because I'd reached for the tool that
+belongs to the box next door.</p>
+
+<h2>Features: build the log-mel yourself once</h2>
+
+<p>Everything downstream eats log-mel spectrograms, so compute one by hand exactly once: frame the signal, window it, FFT, map onto the mel scale,
+take the log. Twenty minutes of work and you stop treating the input as
+magic.</p>
+
+<p>The practical thing to take away: framing parameters are part of your
+model, not tuning knobs. I reused a 512/256 overlap-add shell for a
+component trained at 512/128 — it looked harmless, and it took a 19 dB
+signal-to-noise ratio down to 6 dB. Pick <code>n_fft</code>, window and hop once,
+write them somewhere central, and make every stage read from there.</p>
+
+<h2>VAD: your data is the model</h2>
+
+<p>A frame-level speech detector needs about 55,000 parameters. At that size you
+can stop blaming architecture for anything. Clarifying, in a way: every problem
+you have is now a data problem.</p>
+
+<p>Mine reported <code>P(speech) = 1.0</code> on room noise with nobody talking.
+Same architecture, same training loop, corrected data, and the same input scores
+0.04.</p>
+
+<div class="callout">
+<span class="label">Do this before you train anything</span>
+Write the evaluation set first, and make it the specific things you expect to
+break: digital silence, mains hum, babble, speech recorded too quietly. Mine
+took ten minutes and then chose which checkpoint shipped — the best hard-case
+score was 0.806 at step 2750 while the last step of the run scored 0.699.
+Without a targeted set you'd ship the final checkpoint and never know.
+</div>
+
+<h2>Endpointing: the stage that should have no model</h2>
+
+<p>Endpointing answers "have they finished talking?" and I'd argue against
+putting a model here. It's a state machine over VAD output plus a hangover timer,
+and all the content lives in the policy.</p>
+
+<p>Two layers work much better than one. The acoustic layer tells you a pause
+happened. It does not tell you the turn ended, because people pause
+mid-sentence constantly. So add a linguistic layer on top: if the utterance
+sounds finished, commit after about 300 ms; if it trails off on "and", "so",
+"because", "um", wait around 950 ms for more.</p>
+
+<p>Two constants that matter more than they look. A redemption window of roughly
+320 ms stops a breath from ending someone's turn. A pre-speech pad of around
+220 ms keeps the onset consonant the detector would otherwise clip — without it
+"sixty" arrives as "ixty" often enough to be a real problem.</p>
+
+<p>One architectural consequence, and it shapes your whole system: barge-in
+means detecting speech while the agent is talking. VAD is sub-millisecond so it
+can run inline, but recognition and synthesis take hundreds of milliseconds. If
+either of them runs on your event loop, the agent cannot hear you while it
+speaks. Decide your threading model here, not later.</p>
+
+<h2>The alignment problem, and how CTC dodges it</h2>
+
+<p>Here's the core difficulty of recognition. You have 400 audio frames and
+three characters, and nothing tells you which frames belong to which character.
+Hand-labelling that at scale isn't happening.</p>
+
+<p>CTC's move is to refuse the question. You define a many-to-one collapse —
+merge repeated symbols, drop blanks, then sum the probability of every
+frame labelling that collapses to your target. A forward-backward recursion
+makes that sum tractable. You never commit to one alignment; you score all of
+them at once.</p>
+
+<p>The blank symbol does two jobs that are easy to conflate, and understanding
+both is most of understanding CTC:</p>
+
+<ul>
+<li>it lets the model emit nothing at a frame it's unsure about, and that's what makes the many-to-one
+collapse work at all;</li>
+<li>it separates genuine repeats. Without a blank between them, "hello"
+collapses to "helo".</li>
+</ul>
+
+<p>Here's what a CTC model looks like when it's working acoustically and has no language model. Expect this early on:</p>
+
+<pre><code>hyp: he inl san er mianthes tlen kis roint the stieia sord meai wen
+ref: but in less than five minutes the staircase groaned beneath an
+     extraordinary weight</code></pre>
+
+<p>Rhythm's roughly right. Syllable count's roughly right. What's absent is any
+notion that English words are a finite set — and that's structural, not a bug.
+CTC assumes conditional independence between output frames given the audio,
+and that's precisely a statement that it has no language model. If your early
+output looks like this, the model is learning; it just has nothing telling it
+which sounds are words.</p>
+
+<h2>Choosing your architecture</h2>
+
+<p>The three real options, and when each is right:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Approach</th><th>Language model</th><th>Streams?</th><th>Use when</th></tr></thead>
+<tbody>
+<tr><td>CTC</td><td>none, needs an external one</td><td>trivially</td><td>cheapest, and a good first build</td></tr>
+<tr><td>RNN-T</td><td>internal, over output history</td><td>yes, monotonic</td><td>the production default for streaming</td></tr>
+<tr><td>Attention encoder-decoder</td><td>strongest</td><td>badly, and can hallucinate</td><td>offline accuracy, e.g. Whisper</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Hybrid CTC/attention is what I'd recommend building: one encoder, two heads.
+CTC's monotonicity acts as a stabiliser while the decoder supplies the language
+modelling, and each covers the other's structural weakness.</p>
+
+<p>Swapping a BiGRU+CTC baseline for a Conformer with that hybrid setup, on
+identical audio, is the single biggest win available:</p>
+
+<div class="kpi">
+  <div class="box"><span class="v">1.076 to 0.607</span><span class="k">word error, 44% relative</span></div>
+  <div class="box"><span class="v">0.658 to 0.276</span><span class="k">character error, 58% relative</span></div>
+  <div class="box"><span class="v">2.7x</span><span class="k">faster inference</span></div>
+  <div class="box"><span class="v">0</span><span class="k">extra training data</span></div>
+</div>
+
+<div class="diagram">audio ──▶ log-mel ──▶ <span class="a">SUBSAMPLE ×4</span> ──▶ <span class="a">12 × CONFORMER</span> ──┬──▶ <span class="g">CTC head</span>
+                     <span class="m">100/s → 25/s</span>                   │    <span class="m">where things ARE</span>
+                     <span class="m">16× cheaper</span>                    │
+                                                     └──▶ <span class="c">DECODER</span>
+                                                          <span class="m">what is SAID</span>
+
+ <span class="w">ONE CONFORMER BLOCK</span>
+ ┌────────────────────────────────────────────────────────┐
+ │  ½ FFN   →   SELF-ATTENTION   →   CONVOLUTION  →  ½ FFN │
+ │  <span class="m">526K</span>           <span class="m">329K</span>                <span class="m">207K</span>          <span class="m">526K</span>  │
+ │              <span class="m">global context</span>      <span class="m">local, 1.24 s</span>            │
+ │              <span class="m">relative pos.</span>       <span class="m">causal ⇒ streams</span>         │
+ └────────────────────────────────────────────────────────┘</div>
+
+<p>Two things there matter when you build it. The ×4 subsampling
+before the blocks makes everything 16× cheaper and costs you nothing, so do it
+first. And two thirds of each block is feed-forward — attention is the smallest
+learned part, the opposite of what the name suggests, and useful to know when
+you're deciding what to shrink.</p>
+
+<h2>Making it stream, for 3%</h2>
+
+<p>Streaming gets discussed as a quality sacrifice. At this scale it's a
+rounding error, and it takes two changes that only work together:</p>
+
+<ul>
+<li><strong>Chunked attention masking</strong>, so a frame attends within its
+chunk plus some history.</li>
+<li><strong>A causal depthwise convolution</strong>, left-padded only.
+Skip this and the conv leaks about 15 frames of future context, which makes the
+attention mask you carefully wrote a fiction.</li>
+</ul>
+
+<p>Resample the chunk size every batch during training and one set of weights
+serves every latency operating point. Measured cost: word error goes 0.607 to
+0.627 for 640 ms of lookahead, roughly 3% relative.</p>
+
+<p>Pick an architecture that streams by construction even if you don't need it
+yet. Retrofitting means changing the convolution, and changing the convolution
+means retraining.</p>
+
+<h2>Things that will cost you a day each</h2>
+
+<p>These are the ones I'd want to have been told:</p>
+
+<ul>
+<li><strong>Warm up over ~15,000 steps, not 1,500.</strong> Too fast a rise
+locks CTC into the all-blank minimum and it doesn't come back. Mine collapsed to
+100% blank frames, entropy 0.82 of a possible 6.93, decoding to an empty string
+— and neither the loss (flat, plausible) nor word error (pinned at 1.0, same as
+an untrained model) could see it. Log blank-frame fraction; it goes to 1.0
+immediately.</li>
+<li><strong>Read the reference recipe before changing hyperparameters.</strong>
+I was about to spend three days shrinking a 1024 vocabulary. ESPnet uses 5,000
+on the same corpus for 8.4% word error. The vocabulary was never the problem.</li>
+<li><strong>Hold out speakers, not utterances.</strong> My held-out set shared
+39 of 39 speakers with training, so every number I'd quoted was
+speaker-dependent and not comparable with anything published.</li>
+<li><strong>Checkpoint averaging has a precondition.</strong> It assumes the
+checkpoints orbit one basin. Mine spanned 0.86 to 0.61, so averaging the last
+five gave 0.659 against a best single of 0.612. Average the best K by held-out
+error, and keep it only if it wins.</li>
+<li><strong><code>zero_infinity=True</code> hides infeasible samples.</strong>
+If a target is longer than the encoder output, CTC is impossible and PyTorch
+substitutes a zero gradient instead of raising. A bad vocabulary silently trains
+on a fraction of your data.</li>
+<li><strong>Verify the GPU by using it.</strong> <code>torch.cuda.is_available()</code>
+returned True twice on machines where a convolution then failed. Run a real
+convolution in your bootstrap and look at the result.</li>
+</ul>
+
+<h2>What to expect at the end</h2>
+
+<p>My recognizer gets 0.607 word error. Whisper base.en gets 0.033. It also saw
+680,000 hours against my 100, a 165,000× data advantage, and quoting one number
+next to the other without that ratio would be dishonest.</p>
+
+<p>So don't build this to win. Build it because "the gap is data" turns out to be
+false as a general claim, and you can only find that out by moving one thing at
+a time. For the VAD the gap really was data. For synthesis it was architecture.
+For recognition it's data, architecture, recipe and inference all at once — and
+after this you'll be able to tell which one you're looking at, and that beats the model.</p>
+
+<p>The module-by-module code, with the training runs, is in the repo under
+<code>docs/</code>.</p>
+
+</main>
+</body>
+</html>

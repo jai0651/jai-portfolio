@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to build a video search engine that cites its sources</title>
+<meta name="description" content="An architecture guide to multimodal video retrieval: splitting ingestion from query, choosing frames, fusing text and visual search, temporal reranking, and building an evaluation set that can actually tell you it works." />
+<meta name="date" content="2026-08-15" />
+<meta name="tags" content="video retrieval, multimodal, rag, evaluation, clip" />
+</head>
+<body>
+<main>
+
+<p>The goal: upload a two-hour lecture, ask "when was backpropagation
+explained?" or "find every segment with a red car", and get an answer back with
+the timestamps and frames that support it.</p>
+
+<p>This is how the pieces fit together, which decisions actually matter, and how
+to build an evaluation set that can tell you whether any of it works. The
+architecture generalises to most retrieval systems over time-based media.</p>
+
+<h2>Start by splitting the system in half</h2>
+
+<p>The single most important structural decision is recognising that you're
+building two systems with opposite constraints, and keeping them apart.</p>
+
+<div class="diagram"><span class="b">┌──────────── INGESTION · throughput-bound, has to fit in 16 GB ──────────┐</span>
+  video ─▶ <span class="a">DECODE</span> ─▶ <span class="a">FRAME SELECT</span> ─┬─▶ vision encoder ─┐
+             <span class="m">M0</span>          <span class="m">M4</span>        ├─▶ ASR + timestamps├─▶ <span class="g">TEMPORAL INDEX</span>
+                                   └─▶ OCR ────────────┘        <span class="m">M6</span>
+<span class="b">└─────────────────────────────────────────────────────────────────────────┘</span>
+
+<span class="w">┌──────────────────── QUERY · latency-bound ──────────────────────────────┐</span>
+  question ─▶ <span class="a">RETRIEVE</span> ─▶ <span class="a">FUSE</span> ─▶ <span class="a">TEMPORAL RERANK</span> ─▶ evidence ─▶ <span class="c">VLM</span>
+                <span class="m">M6/M7</span>       <span class="m">M7</span>            <span class="m">M8</span>              <span class="m">M9</span>        <span class="m">answer</span>
+<span class="w">└─────────────────────────────────────────────────────────────────────────┘</span></div>
+
+<p>Ingestion is a batch job. It can be slow, it runs once per video, and its
+binding constraint is memory — a two-hour video will happily exhaust whatever
+you give it. Query is interactive, runs constantly, and its binding constraint
+is latency. Optimising them together gets you a system that's mediocre at
+both.</p>
+
+<h2>Decoding: get your timestamps from the container</h2>
+
+<p>Your first decision is how to represent a frame, and there's a trap here
+worth avoiding.</p>
+
+<p>The tempting design carries a frame index and computes time as
+<code>index / fps</code> wherever it's needed. Simpler, no time-base arithmetic,
+and on a normal test file the drift measures 0.00 ms against the container's own
+timestamps.</p>
+
+<p>It's correct for constant frame rate video and nothing else. Screen recorders
+emit frames when the screen changes, so a QuickTime or Zoom capture at "30 fps"
+is an average, and index-derived time drifts without bound. Since the whole
+deliverable is a timestamp somebody clicks, the failure mode is a confident
+citation pointing at the wrong moment — and no test catches it unless the test
+checks the number.</p>
+
+<p>Take time from the container's presentation timestamps, and write one test
+asserting the two agree on a file you know is constant-rate.</p>
+
+<h2>Frame selection: where your compute budget goes</h2>
+
+<p>You cannot encode every frame of a two-hour video, so this stage decides your
+whole accuracy-versus-cost frontier. The options, roughly in order of
+sophistication: uniform sampling, motion-aware sampling, shot-boundary
+detection, and novelty-based coreset selection.</p>
+
+<p>One shortcut that looks free and isn't: encoders insert keyframes at scene
+cuts, and a keyframe scan costs about 0.03× a full decode, so you'd think it
+hands you shot boundaries for nothing. On an authored test video where I knew
+the answer, x264 found one boundary of four. It broke its regular three-second
+cadence exactly once, at the hard cut. The dissolve produced no keyframe at all,
+and two more boundaries only looked found because the cadence happened to land
+near them.</p>
+
+<p>So treat keyframes as a high-precision, low-recall candidate generator: a
+broken cadence means something, silence means nothing. Useful as a prior, not as
+an answer.</p>
+
+<p>Worth knowing that the boundary it missed was the dissolve, and commercial
+scene-cut heuristics fail on dissolves for the same reason — the change per
+frame is genuinely small. When a well-tuned production system fails the way
+yours does, the difficulty is in the problem, and you can stop trying to tune
+your way out.</p>
+
+<h2>Three retrieval channels, and fusing them</h2>
+
+<p>A video carries at least three searchable signals, and they cover different
+questions:</p>
+
+<ul>
+<li><strong>Transcript</strong> from ASR with word-level timestamps, chunked
+into temporal segments. Chunk size is a real hyperparameter, and boundary loss
+is real: an answer that straddles two chunks is retrievable from neither.</li>
+<li><strong>Visual embeddings</strong> from CLIP-style encoders over selected
+frames. This is what answers "find the red car".</li>
+<li><strong>On-screen text</strong> via OCR, deduplicated across near-identical
+slides. On lecture content this one outperforms the visual channel pretty regularly, and it's the one people skip.</li>
+</ul>
+
+<p>Fusing them is mostly about score normalisation, because the three channels
+produce scores on incomparable scales. Reciprocal rank fusion is probably the right default: it uses only the rank, so you don't have to calibrate
+anything. Try weighted score fusion after you have a benchmark, not before.</p>
+
+<h2>Chunks are not answers</h2>
+
+<p>Retrieval gives you chunks. A user wants an interval. Reranking is where you
+merge adjacent hits, expand to neighbours, and rescore the merged span with a
+cross-encoder.</p>
+
+<p>Then build the evidence packet with a token budget before anything reaches a
+VLM: interleaved frames and text, trimmed to fit, with every piece carrying its
+timestamp so the answer can cite it. Letting the model see unbounded context is
+how you get slow, expensive answers that still can't point at anything.</p>
+
+<h2>Build the benchmark before you tune anything</h2>
+
+<p>This is the part I'd tell anyone to do first, and it's probably the part everyone defers.</p>
+
+<p>You need your own typed evaluation set: questions labelled by what kind they
+are (speech, visual, on-screen text, temporal), each with a tight ground-truth
+interval. Then every module gets scored on it. Without this you're tuning by
+vibes, and with it you find things like these three, all of which were invisible
+in normal use:</p>
+
+<div class="callout warn">
+<span class="label">Give a perfect input, demand a perfect score</span>
+My timestamp metric reported 0.60 s mean error and IoU 0.73, and I wrote a whole
+paragraph about what that meant. Then a test fed it an oracle transcript —
+authored text, authored timings, zero error by construction — and it scored
+0.64 s. The metric was selecting which hypothesis words to score using the
+predicted timings, which is circular, and its ±1 s window was wider than the
+0.45 s gap between sentences, so every span absorbed its neighbours. Aligning by
+text instead: 0.15 s mean error, IoU 0.88 to 0.93. The real result was four
+times better than the one I'd published.
+</div>
+
+<p><strong>Measure retrieval and answerability separately.</strong> My
+per-modality table claimed visual questions were impossible for a speech-only
+system while printing hit@5 of 1.000 for them. Both were true about different
+things: the narration says "an object travels across the screen" without ever
+naming its colour, so retrieval finds the right moment and the answer isn't
+there. Localisation succeeded, answerability failed, and no metric I had could
+tell them apart. Add one that asks whether the retrieved text actually contains
+the answer — mine reads 0.778 for speech questions and exactly 0.000 for every
+other type.</p>
+
+<p><strong>Test the benchmark itself.</strong> My temporal questions scored
+hit@5 of 1.000, and so did random retrieval, exactly 1.000. I'd given those
+questions ground-truth intervals spanning from one shot to nearly the end of the
+video, so any chunk overlaps and every retrieval counts as correct. Assert that
+chance-level performance on a question falls below some threshold. Tight
+intervals are the only thing that makes temporal overlap mean anything.</p>
+
+<h2>Diagnostics that video specifically needs</h2>
+
+<p>Two that generic retrieval tutorials won't mention, because they only bite on
+temporal media.</p>
+
+<p><strong>Near-duplicate fraction.</strong> Consecutive frames of a static
+slide sit about a millionth of a unit apart in embedding space. That breaks
+anything assuming a continuous density: my intrinsic-dimension estimator
+returned 0.3, which isn't a possible value, because one distance ratio reached
+345,901 and dominated the sum. 75 of 89 frames had a near twin. Exclude pairs
+below a floor, and promote near-duplicate fraction to a first-class diagnostic —
+the quantity that broke the estimator turned out to be one of the most important
+facts about the data.</p>
+
+<p><strong>Sweep the dimension before you believe an ordering.</strong> I
+measured embedding contrast across three data regimes at 512 dimensions, decided
+the ordering was a law, and asserted it in a test. It failed immediately at 256,
+where two of the three swap places. The regimes are controlled by different
+parameters and don't scale with dimension the same way.</p>
+
+<h2>Environment, briefly</h2>
+
+<p>Two things that cost an afternoon and have nothing to do with retrieval.
+Pin one Python minor version back from newest — wheel availability lags releases
+by six to twelve months and the long tail lags further. And if your test suite
+aborts during a torch import only when two particular files run together, that's
+two OpenMP runtimes in one process (torch ships one, FAISS ships another) and
+not a logic bug. Import order won't fix it; the abort happens on initialisation,
+so reordering only changes which library dies.</p>
+
+<h2>What to build from scratch, and what not to</h2>
+
+<p>I wrote four components explicitly and then measured them against the
+production alternative behind the same interface: a mini-CLIP, the nearest
+neighbour index built up from brute force through IVF to HNSW, a shot detector,
+and a spatiotemporal video encoder.</p>
+
+<p>The scratch versions lose, and they're meant to. Ship FAISS and a pretrained
+encoder. But you can't reason about a retrieval stack you've never implemented,
+and every problem above was found by reasoning about the stack, not by writing a layer. Maybe build one of them, not all four, and spend the rest of your time on the evaluation set.</p>
+
+</main>
+</body>
+</html>
