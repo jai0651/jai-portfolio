@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to tell whether your checks are still checking</title>
+<meta name="description" content="Four times in three weeks a green test suite on my ML site turned out to be checking nothing at all. The failures rhyme, and the fixes are cheap: print the denominator, assert the boring state, and break each check on purpose once." />
+<meta name="date" content="2026-09-20" />
+<meta name="tags" content="testing, static sites, python, ci, tooling" />
+</head>
+<body>
+<main>
+
+<p>My test suite printed this while one of my pages was displaying another page's
+numbers:</p>
+
+<pre><code>47 Try it blocks checked, 0 problems</code></pre>
+
+<p>The chapter on diffusion caching had a Python snippet in it that sized a
+jitter buffer for a voice pipeline (pasted there by accident, by an agent
+working in the wrong file), and the caption underneath was still discussing
+cache hit rates that nothing on the page had produced. Green build. Every
+check ran and none of them had anything to say, because each one was doing
+exactly what I'd written it to do.</p>
+
+<p>That's happened four times now on this project in about three weeks, across
+four different checks, and I found the fourth one this morning while writing
+this post. So I've stopped reading "the suite is green" as information, and
+started asking a narrower question about each check: can this thing still
+fail?</p>
+
+<h2>What's being checked</h2>
+
+<p>The site is <a href="https://knowml.vercel.app">KnowML</a>, forty-one chapters
+on machine learning (thirty-seven of them a fortnight ago, so it grows). Most
+sections carry a small runnable Python snippet with a caption quoting what it
+printed ("the gradient comes out at <code>0.0089</code>", that sort of thing).
+Those captions are the only real promise the site makes. If the number in the
+caption and the number the code prints drift apart, the page's wrong in a way
+no reader will ever catch, and neither will I.</p>
+
+<p>So there's a checker (about a hundred lines of Python, no dependencies). One
+decision in it has paid for itself several times over: it reads the rendered
+HTML, not the scratch file the snippet was drafted in.</p>
+
+<pre><code>BLOCK = re.compile(
+    r'&lt;details class="tryit"[^&gt;]*&gt;\s*'
+    ...
+    r'&lt;pre&gt;&lt;code&gt;(.*?)&lt;/code&gt;&lt;/pre&gt;\s*'
+    r'&lt;div class="tryit-out"&gt;(.*?)&lt;/div&gt;',
+    re.DOTALL)
+
+code = html.unescape(code_html)
+r = subprocess.run([PY, "-c", code], capture_output=True, text=True)</code></pre>
+
+<p>Two copies of every snippet exist and only one of them goes to readers, so
+checking the draft would mean checking a file nobody visits. That much was
+obvious going in. What wasn't obvious is how a regex behaves when the markup
+shifts underneath it.</p>
+
+<h2>Zero isn't a passing score</h2>
+
+<p>I made the code blocks default to expanded, since collapsing the code on a
+page whose point is the code seemed like a strange choice. That's one
+attribute:</p>
+
+<pre><code>&lt;details class="tryit" open&gt;</code></pre>
+
+<p>My pattern matched <code>&lt;details class="tryit"&gt;</code> literally. After
+the change it matched nothing, anywhere, on any page. So the loop body never
+ran, the problem counter stayed where it started, and the script printed
+<code>0 Try it blocks checked, 0 problems</code> and exited zero. If I hadn't
+read that line out of habit I'd have had a passing build over untested
+snippets for as long as it took a reader to complain.</p>
+
+<p>Widening the regex is the boring half of the fix. Here's the half that does
+the work:</p>
+
+<pre><code>if total == 0:
+    print("FAIL: found no Try it blocks at all — the pattern has drifted")
+    sys.exit(1)</code></pre>
+
+<p>There've been Try it blocks on this site since chapter one. Finding none means
+the pattern drifted, not that the blocks went away. If your check walks a
+collection, it should know roughly how big that collection ought to be, print
+the size on every run (so it sits in the log where somebody might notice it
+move), and refuse to pass on an empty one.</p>
+
+<p>Then I edited the pattern to something deliberately wrong and ran it. Exit 1,
+and the right message (the one about the pattern having drifted). That took
+maybe forty seconds, and it's the only reason I believe the guard works.</p>
+
+<h2>One-sided assertions</h2>
+
+<p>Each chapter's table of contents is a drawer: a thin rail of ticks down the
+right edge that slides open when your pointer gets near it. I wrote a headless
+browser test for it. It hovered the rail, waited for the transition, and
+asserted the panel was visible. Sounds fine, right?</p>
+
+<p>Separately, chasing a mobile overflow bug, I ran <code>git checkout --
+assets/css/style.css</code> to compare something against HEAD. My drawer CSS
+was still uncommitted at that moment. It went away. My next commit shipped the
+markup and the JavaScript with no styling at all, so on production the panel
+sat permanently open and the rail was still 264px wide.</p>
+
+<div class="callout">
+<span class="label">Why the test didn't care</span>
+With no drawer CSS the panel is visible all the time. So it's certainly visible
+on hover. That assertion was true, and it was true for the worst possible
+reason.
+</div>
+
+<p>A one-sided assertion on a two-state component tells you nothing, and the
+state you forget to assert is probably the default one, the state a reader
+sees before they touch anything. My rewrite checks closed first: panel hidden
+before any interaction, rail collapsed to 60px or less, one tick per heading.
+Then hover, visible, inside the viewport. Then pointer away, hidden again.</p>
+
+<p>It found a second real bug about a minute after I wrote it. Escape removed
+<code>.is-open</code> and handed focus back to the toggle button, and this
+selector put the panel straight back:</p>
+
+<pre><code>.tocd:focus-within .tocd-panel { /* open */ }</code></pre>
+
+<p>The toggle lives inside <code>.tocd</code>, so focusing it counted as focus
+inside the drawer. Scoping to <code>.tocd-panel:focus-within</code> fixed it.
+I wouldn't have caught that by hand, because by hand you press Escape and then
+click somewhere else, the toggle blurs, the panel hides, and it all looks
+correct.</p>
+
+<h2>Proxies come apart eventually</h2>
+
+<p>Back to that jitter buffer code sitting on the diffusion page.
+<code>check-tryit.py</code> did everything it'd been designed to do. It found
+47 blocks, parsed them, ran them, and confirmed each one exited zero and
+printed something. All true. That voice snippet ran beautifully in the wrong
+chapter.</p>
+
+<p>"Runs and prints something" was standing in for "this page is describing this
+output", and those two came apart the moment I had three agents drafting
+chapters into a shared scratch directory (my setup, not their fault),
+overwriting each other's files. A proxy holds until the specific thing that
+breaks it turns up. Then it keeps holding, silently, and that's the annoying
+part.</p>
+
+<p>So I wrote a second checker that binds the caption to the code. Captions here
+mark a figure as coming from the output by wrapping it in
+<code>&lt;code&gt;</code>, so the rule falls out of the markup: every number
+in a <code>&lt;code&gt;</code> span inside a caption has to turn up in that
+snippet's stdout.</p>
+
+<pre><code>hay = re.findall(r"-?\d+(?:\.\d+)?", r.stdout + "\n" + code)
+for n in nums:
+    dp = len(n.split(".")[1]) if "." in n else 0
+    if not any(round(h, dp) == float(n) for h in hayf):
+        missing.append(n)</code></pre>
+
+<p>Two details in there cost me a couple of passes. Comparison is numeric and
+rounded to whatever precision the caption chose, because a caption writing
+<code>1.000</code> is describing precisely what numpy prints as
+<code>1.</code>, and a string match calls that a failure. And the haystack
+includes the snippet source, not only its output, since a caption sometimes
+quotes a constant the code takes as an input (a figure cited from a paper,
+say) and that's still anchored to something on the page.</p>
+
+<p>Both of those started life as failures on pages that were correct. I loosened
+the checker instead of editing the pages, twice, and that's where this
+approach can quietly rot. Do it once too often and you're back to a check that
+passes on anything. I don't have a rule for when to stop. I just try to notice
+that I'm doing it.</p>
+
+<h2>Break it on purpose</h2>
+
+<p>A new check is code with no tests whose failure mode is silence. So how do you
+know it works? Before trusting the caption checker I put the original bug
+back: pasted chapter 39's jitter-buffer snippet into chapter 40's slot, the
+same way the agents had done it by accident, and ran both scripts.</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th scope="col">With the snippet swapped</th><th scope="col">What it said</th></tr></thead>
+<tbody>
+<tr><td><code>check-tryit.py</code></td><td>47 Try it blocks checked, 0 problems</td></tr>
+<tr><td><code>check-tryit-figures.py</code></td><td>named all four orphaned figures, by page and by number</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>That's the entire verification and it takes a minute. Skip it and you've got a
+script that's never once been observed doing its job.</p>
+
+<h2>And then this morning</h2>
+
+<p>Writing this post, I went to re-run everything so I could quote real numbers,
+and got 39 failures (every snippet that imports numpy, more or less). All of
+them <code>ModuleNotFoundError: No module named 'numpy'</code>. That
+virtualenv (the one these snippets execute in) lived in <code>/tmp</code>, and
+macOS had apparently cleaned part of it out from under me.</p>
+
+<p>Fine, rebuild it. But look at what the two checkers did when that interpreter
+was missing entirely:</p>
+
+<pre><code>if not os.path.exists(PY):
+    print(f"SKIP: {PY} not found"); return 0        # caption checker
+
+if not os.path.exists(PY):
+    print("  SKIP %s: not found" % tag); continue   # per block, then exit 0</code></pre>
+
+<p>So <code>npm run test:code</code> on a machine where <code>/tmp</code> had
+been emptied would report <code>47 Try it blocks checked and executed, 0
+problems</code> having executed nothing at all, and the caption checker would
+print a single SKIP line and exit zero. It's the first bug again, and it'd
+been sitting there the entire time I was being pleased with myself about the
+first bug. The venv lives in the repo now (gitignored, one npm script to build
+it), and a missing interpreter's a failure:</p>
+
+<pre><code>$ TRYIT_PY=/nope/python python3 scripts/check-tryit-figures.py
+FAIL: no interpreter at /nope/python — no caption would be cross-checked.
+exit=1</code></pre>
+
+<h2>Suspect the measurement</h2>
+
+<p>One more, from a tool that's got nothing to do with this project, because it's
+the sneakiest version of the same thing.</p>
+
+<p>I've got a script that scores prose for whether it reads as machine-written,
+counting things like contractions per 100 sentences against a corpus of human
+engineering posts from 2015 to 2021. It reported the human posts at 24
+contractions per 100 sentences. Generated prose sits around 3 to 6 (the four
+AI-written posts I measured ranged 2.5 to 6.2), so 24 is uncomfortably close,
+and I nearly threw the metric out as useless. Why would ten hand-written posts
+cluster that near the machines?</p>
+
+<p>They don't. It was decoding <code>&amp;#39;</code> to a space before counting,
+so every contraction on an entity-encoded page had vanished. The real figure
+is 62, and that axis turned out to be the sharpest single signal in the set.</p>
+
+<p>When a measurement tells you the world looks much worse than you expected,
+suspect the measurement first. A broken check and a check delivering bad news
+look identical from outside.</p>
+
+<h2>What I still don't have</h2>
+
+<p>There's 42 to 144px of horizontal overflow on chapter pages at 390px wide. It
+predates all of this, it's identical at HEAD, and I've ruled out the display
+math, the inline math, the inline code and the drawer. I don't know what
+causes it, and there's no check for it, which is the honest summary of this
+suite: it verifies the things I already thought to worry about.</p>
+
+<p>All four failures did share one property, though, and it's a cheap thing to
+look for. In each case the check reported a number, and the number was wrong
+in the direction that reads as success. Zero blocks instead of 36 (there were
+36 at the time, 47 now). Visible on hover, with nothing said about hidden when
+not. 47 checked and 0 problems on a page quoting figures it never computed. 47
+executed, none executed.</p>
+
+<p>Every check here prints its denominator now, and I've broken each one on
+purpose at least once to watch it fail. <code>check-tryit-figures.py</code>
+cross-checks 47 captions against real output. If that number drops and I
+haven't deleted anything, something's drifted, and I'd rather hear it from the
+log than from a reader.</p>
+
+</main>
+</body>
+</html>
