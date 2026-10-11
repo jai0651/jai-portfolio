@@ -6,7 +6,7 @@ import SectionHeader from "@/components/SectionHeader";
 export const metadata: Metadata = {
   title: "Learn — Jai Shankar",
   description:
-    "Courses, writeups and videos I have made while learning things properly: machine learning from first principles through to the current frontier.",
+    "Courses, writeups and videos I have made while learning things properly: machine learning from first principles to the current frontier, and how computers really run your code.",
 };
 
 type Kind = "course" | "video";
@@ -29,8 +29,8 @@ interface Topic {
 }
 
 /*
- * Hand-maintained rather than database-backed. There is one topic today and the
- * shape of the next few is not settled, so a typed constant beats a schema and
+ * Hand-maintained rather than database-backed. There are only a couple of topics
+ * and the shape of the next few is not settled, so a typed constant beats a schema and
  * an admin screen until it stops being obvious what belongs here.
  */
 const TOPICS: Topic[] = [
@@ -46,6 +46,21 @@ const TOPICS: Topic[] = [
         href: "https://knowml.vercel.app",
         kind: "course",
         meta: ["28 sections", "searchable", "free"],
+      },
+    ],
+  },
+  {
+    slug: "systems",
+    title: "Systems",
+    sub: "What actually happens underneath your code, from the CPU up to distributed systems.",
+    resources: [
+      {
+        title: "KnowSys",
+        blurb:
+          "A course on how computers really run your code: CPUs, memory, the Linux kernel, concurrency, storage engines and distributed systems, taught step by step with diagrams you walk through and numbers measured on real machines.",
+        href: "https://knowsys.tech",
+        kind: "course",
+        meta: ["75 chapters", "8 labs", "free"],
       },
     ],
   },
