@@ -47,6 +47,13 @@ interface TerminalHeroProps {
   bio: string;
   skills: Skill[];
   resumeUrl: string;
+  /**
+   * Grab focus on mount (desktop only). Turn off when the terminal sits below
+   * the fold, or focusing it would scroll the page down to it on load.
+   */
+  autoFocus?: boolean;
+  /** The printed name is the page's h1 only when the terminal is the hero. */
+  nameAs?: "h1" | "p";
 }
 
 const ROLES = ["Software Engineer", "AI / LLM Engineer", "ML + physics tinkerer"];
@@ -215,7 +222,14 @@ const OutLink = ({ href, children }: { href: string; children: ReactNode }) => (
   </a>
 );
 
-const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
+const TerminalHero = ({
+  name,
+  bio,
+  skills,
+  resumeUrl,
+  autoFocus = true,
+  nameAs: NameTag = "h1",
+}: TerminalHeroProps) => {
   const router = useRouter();
   const role = useTypewriter(ROLES);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -262,12 +276,15 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
 
   // focus on desktop only (avoid popping the mobile keyboard on load)
   useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth >= 1024) {
+    if (autoFocus && typeof window !== "undefined" && window.innerWidth >= 1024) {
       inputRef.current?.focus();
     }
-  }, []);
+  }, [autoFocus]);
 
+  // Follow new output, but leave the intro alone on first paint: on a narrow
+  // screen the bio overflows the panel and scrolling would clip the name.
   useEffect(() => {
+    if (history.length === 0) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [history]);
 
@@ -829,9 +846,9 @@ const TerminalHero = ({ name, bio, skills, resumeUrl }: TerminalHeroProps) => {
           <p className="text-muted">
             <span className="text-accent-dim">$</span> whoami
           </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink xl:text-[32px]">
+          <NameTag className="mt-1 text-2xl font-semibold tracking-tight text-ink xl:text-[32px]">
             {name}
-          </h1>
+          </NameTag>
           <p className="text-base text-muted">
             <span className="text-accent">&gt;</span>{" "}
             <span className="gradient-text font-medium">{role}</span>

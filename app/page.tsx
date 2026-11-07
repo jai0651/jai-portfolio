@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { SITE } from "@/lib/site";
-import HomeView from "@/components/home/HomeView";
+import StoryView from "@/components/story/StoryView";
 
 /*
  * Server component on purpose.
@@ -15,7 +15,7 @@ import HomeView from "@/components/home/HomeView";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Jai Shankar — AI Engineer",
+  title: "Jai Shankar — Software Engineer",
   description: SITE.description,
   alternates: { canonical: "/" },
   openGraph: { type: "profile", url: "/", title: SITE.title, description: SITE.description },
@@ -34,13 +34,10 @@ export default async function Home() {
   const profile = Object.fromEntries(settings.map((s) => [s.key, s.value]));
 
   return (
-    <HomeView
-      profile={{
-        profile_name: profile.profile_name,
-        profile_title: profile.profile_title,
-        profile_description: profile.profile_description || DEFAULT_BIO,
-        profile_photo: profile.profile_photo,
-      }}
+    <StoryView
+      name={profile.profile_name || "Jai Shankar"}
+      bio={profile.profile_description || DEFAULT_BIO}
+      photo={profile.profile_photo}
       skills={skills.map((s) => ({ id: s.id, name: s.name }))}
       resumeUrl={resume?.url ?? "/JaiShankar_cv.pdf"}
     />

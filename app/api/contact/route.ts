@@ -13,11 +13,15 @@ const transporter = nodemailer.createTransport({
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { firstname, lastname, email, phone, service, message } = body;
+    const { firstname, email, phone, message } = body;
+    // Last name and topic are optional on the form. The columns are not
+    // nullable, so store empty / "general" rather than reject the message.
+    const lastname: string = body.lastname ?? "";
+    const service: string = body.service || "general";
 
-    if (!firstname || !lastname || !email || !service || !message) {
+    if (!firstname || !email || !message) {
       return NextResponse.json(
-        { message: "All required fields must be filled" },
+        { message: "Please fill in your name, email and message." },
         { status: 400 }
       );
     }
@@ -34,12 +38,12 @@ export async function POST(req: NextRequest) {
 
     try {
       await transporter.sendMail({
-        from: `"${firstname} ${lastname}" <${email}>`,
+        from: `"${[firstname, lastname].filter(Boolean).join(" ")}" <${email}>`,
         replyTo: email,
         to: process.env.EMAIL,
-        subject: `Portfolio Contact: ${service} - from ${firstname} ${lastname}`,
+        subject: `Portfolio Contact: ${service} - from ${[firstname, lastname].filter(Boolean).join(" ")}`,
         text: `
-Name: ${firstname} ${lastname}
+Name: ${[firstname, lastname].filter(Boolean).join(" ")}
 Email: ${email}
 Phone: ${phone || "Not provided"}
 Service: ${service}
@@ -72,7 +76,7 @@ ${message}
     <div class="content">
       <div class="field">
         <div class="label">From</div>
-        <div class="value">${firstname} ${lastname}</div>
+        <div class="value">${[firstname, lastname].filter(Boolean).join(" ")}</div>
       </div>
       <div class="field">
         <div class="label">Email</div>

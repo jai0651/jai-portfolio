@@ -36,7 +36,7 @@ export default async function BlogIndex() {
   }));
 
   return (
-    <Section space="md">
+    <Section tone="hero" space="none" className="pb-20 pt-8 xl:pb-28">
       <Suspense fallback={null}>
         <BlogList posts={items} />
       </Suspense>

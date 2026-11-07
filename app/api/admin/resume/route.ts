@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
+import { revalidatePublic } from "@/lib/revalidate";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { cachedJson } from "@/lib/apiCache";
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    revalidatePublic("resume");
     return NextResponse.json({ resume });
   } catch (error) {
     console.error("Failed to upload resume:", error);
@@ -90,6 +92,7 @@ export async function DELETE(req: NextRequest) {
         }
       }
       await prisma.resume.delete({ where: { id } });
+      revalidatePublic("resume");
     }
 
     return NextResponse.json({ success: true });

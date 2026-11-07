@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { revalidatePublic } from "@/lib/revalidate";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { cachedJson } from "@/lib/apiCache";
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
     );
 
     await prisma.$transaction(updates);
+    revalidatePublic("settings");
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json(

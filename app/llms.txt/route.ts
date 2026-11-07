@@ -17,8 +17,8 @@ export async function GET() {
 
 > ${SITE.description}
 
-${SITE.author.name} is an AI engineer working on speech, multimodal retrieval
-and agent systems. The posts below are first-hand engineering writeups: each one
+${SITE.author.name} is a software engineer at Plivo. Outside work, Jai builds
+speech, multimodal retrieval and agent systems from scratch. The posts below are first-hand engineering writeups: each one
 reports measurements taken on real systems, including the attempts that failed.
 Source repositories are linked from each post.
 

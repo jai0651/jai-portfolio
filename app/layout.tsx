@@ -86,7 +86,8 @@ export default function RootLayout({
                   "@id": `${SITE.url}#person`,
                   name: SITE.author.name,
                   url: SITE.url,
-                  jobTitle: "AI Engineer",
+                  jobTitle: "Software Engineer",
+                  worksFor: { "@type": "Organization", name: "Plivo", url: "https://www.plivo.com" },
                   sameAs: [SITE.author.github],
                   knowsAbout: [
                     "Speech recognition", "Text to speech", "Voice AI",

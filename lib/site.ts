@@ -6,9 +6,9 @@
 export const SITE = {
   url: "https://www.jaishankar.dev",
   name: "Jai Shankar",
-  title: "Jai Shankar — AI Engineer",
+  title: "Jai Shankar — Software Engineer",
   description:
-    "Speech, multimodal and agent systems built from the ground up. Writeups on ASR, TTS, video retrieval and local AI, with the measurements and the failures.",
+    "Software engineer at Plivo. Outside work I build speech, vision and agent systems from scratch, and write up the measurements, including what failed.",
   author: {
     name: "Jai Shankar",
     url: "https://www.jaishankar.dev",

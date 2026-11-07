@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { revalidatePublic } from "@/lib/revalidate";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { cachedJson } from "@/lib/apiCache";
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
 
     const data = await req.json();
     const experience = await prisma.experience.create({ data });
+    revalidatePublic("experience");
     return NextResponse.json({ experience });
   } catch {
     return NextResponse.json(
@@ -45,6 +47,7 @@ export async function PUT(req: NextRequest) {
 
     const { id, ...data } = await req.json();
     const experience = await prisma.experience.update({ where: { id }, data });
+    revalidatePublic("experience");
     return NextResponse.json({ experience });
   } catch {
     return NextResponse.json(
@@ -67,6 +70,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ message: "ID required" }, { status: 400 });
     }
     await prisma.experience.delete({ where: { id } });
+    revalidatePublic("experience");
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json(

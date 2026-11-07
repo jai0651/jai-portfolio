@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { SITE } from "@/lib/site";
 import { getPublishedPosts } from "@/lib/blog";
+import { DETAILS } from "@/lib/projects";
 
 export const revalidate = 3600;
 
@@ -15,6 +16,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE.url}/resume`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE.url}/services`, lastModified: now, changeFrequency: "yearly", priority: 0.4 },
     { url: `${SITE.url}/contact`, lastModified: now, changeFrequency: "yearly", priority: 0.4 },
+    ...DETAILS.map((d) => ({
+      url: `${SITE.url}/work/${d.slug}`,
+      lastModified: now,
+      changeFrequency: "monthly" as const,
+      priority: 0.7,
+    })),
   ];
 
   try {

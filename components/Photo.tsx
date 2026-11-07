@@ -3,9 +3,12 @@
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { FaUser } from "react-icons/fa";
+import { cn } from "@/lib/utils";
 
 interface PhotoProps {
   src?: string;
+  /** Width classes; defaults to the size used on the old homepage hero. */
+  className?: string;
 }
 
 /*
@@ -20,7 +23,7 @@ interface PhotoProps {
  * backlight the face floats free of the body — the glow is what a portrait
  * photographer would add to separate the two.
  */
-const Photo = ({ src }: PhotoProps) => {
+const Photo = ({ src, className }: PhotoProps) => {
   const hasPhoto = src && src.trim() !== "";
   const isExternalUrl = hasPhoto && src.startsWith("http");
 
@@ -29,7 +32,7 @@ const Photo = ({ src }: PhotoProps) => {
       initial={{ opacity: 0, scale: 0.97 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-      className="relative w-[260px] xl:w-[360px]"
+      className={cn("relative w-[260px] xl:w-[360px]", className)}
     >
       <p className="mb-3 font-mono text-xs text-faint">
         <span className="text-accent-dim">$</span> open ./avatar.png
