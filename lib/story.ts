@@ -63,6 +63,8 @@ export interface Chapter {
 
 export const HERO = {
   eyebrow: "Jai Shankar · Software / AI engineer",
+  /** "I open the box, learn every layer, then make it ___" — flips through these. */
+  makeIt: ["fast.", "reliable.", "secure.", "scale."],
   sub: "I work on voice and messaging infrastructure at Plivo. Outside work I build speech, vision and agent systems from scratch, and write up what I measure.",
 };
 

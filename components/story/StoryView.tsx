@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import Photo from "@/components/Photo";
 import TerminalHero from "@/components/TerminalHero";
 import StackObject, { CLOSED, OPEN } from "@/components/story/StackObject";
+import FlipWords from "@/components/story/FlipWords";
 import { CHAPTERS, HERO, LAYERS, type Chapter, type LayerId } from "@/lib/story";
 import { fadeUp, fadeUpNow, lead, step } from "@/lib/motion";
 import { SITE } from "@/lib/site";
@@ -164,7 +165,8 @@ export default function StoryView({ resumeUrl, name, bio, photo, skills }: Story
               className="mt-6 text-balance font-sans text-[44px] font-semibold leading-[0.98] tracking-[-0.045em] text-ink sm:text-[60px] xl:text-[80px]"
             >
               I open the box, learn every layer, then{" "}
-              <span className="gradient-text">make it fast.</span>
+              <span className="gradient-text">make it</span>{" "}
+              <FlipWords words={HERO.makeIt} wordClassName="gradient-text" />
             </motion.h1>
             <motion.p
               {...fadeUpNow}
